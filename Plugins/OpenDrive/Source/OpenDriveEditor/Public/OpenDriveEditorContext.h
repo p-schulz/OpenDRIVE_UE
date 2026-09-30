@@ -20,6 +20,13 @@ public:
 	FOpenDriveEditorContext();
 	~FOpenDriveEditorContext();
 
+	// Non-copyable: MSVC's dllexport forces instantiation of the implicit copy constructor/assignment
+	// operator right where the class is defined, which would need the complete type of the
+	// forward-declared UOpenDriveEditorSettings (via TStrongObjectPtr). Deleting them avoids that; this
+	// type is always used through a reference/pointer to the one instance owned by the editor module.
+	FOpenDriveEditorContext(const FOpenDriveEditorContext&) = delete;
+	FOpenDriveEditorContext& operator=(const FOpenDriveEditorContext&) = delete;
+
 	// --- Asset & model ---------------------------------------------------------------------
 	UOpenDriveAsset* GetAsset() const { return Asset.Get(); }
 	void SetAsset(UOpenDriveAsset* NewAsset);
