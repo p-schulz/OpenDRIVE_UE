@@ -1,0 +1,39 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Modules/ModuleInterface.h"
+
+class FOpenDriveEditorContext;
+class FOpenDriveMapVisualizer;
+class SDockTab;
+class FSpawnTabArgs;
+
+/** Editor module: asset factory/definition, dockable authoring tabs and the OpenDRIVE editor mode. */
+class FOpenDriveEditorModule : public IModuleInterface
+{
+public:
+	static const FName RoadListTabId;
+	static const FName ElevationTabId;
+	static const FName SuperelevationTabId;
+
+	static FOpenDriveEditorModule& Get();
+
+	virtual void StartupModule() override;
+	virtual void ShutdownModule() override;
+
+	/** State shared by the editor mode panel, the authoring tabs and the viewport visualisation. */
+	FOpenDriveEditorContext& GetContext() const { return *Context; }
+	FOpenDriveMapVisualizer& GetVisualizer() const { return *Visualizer; }
+
+	void OpenRoadListTab() const;
+	void OpenElevationTab() const;
+	void OpenSuperelevationTab() const;
+
+private:
+	TSharedRef<SDockTab> SpawnRoadListTab(const FSpawnTabArgs& Args);
+	TSharedRef<SDockTab> SpawnElevationTab(const FSpawnTabArgs& Args);
+	TSharedRef<SDockTab> SpawnSuperelevationTab(const FSpawnTabArgs& Args);
+
+	TSharedPtr<FOpenDriveEditorContext> Context;
+	TSharedPtr<FOpenDriveMapVisualizer> Visualizer;
+};

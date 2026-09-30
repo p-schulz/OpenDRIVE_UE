@@ -1,0 +1,55 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "OpenDrive/OpenDriveMap.h"
+
+/**
+ * Mutation helpers used by the OpenDRIVE editor tool mode. These operate directly on an in-memory
+ * FOpenDriveMap ("working copy" pattern, mirroring OpenScenario_UE's FOSCModelEdit): the editor edits
+ * the map, then serialises it back to XML with FOpenDriveWriter when the user applies the changes.
+ *
+ * Geometry editing is intentionally limited to single straight segments (roads created or repositioned
+ * from the tool); roads imported with arcs/spirals/polynomials keep their original planView untouched
+ * unless explicitly replaced.
+ */
+class OPENDRIVE_API FOpenDriveModelEdit
+{
+public:
+	/** An id not currently used by any road in Map ("1", "2", ... by default). */
+	static FString MakeUniqueRoadId(const FOpenDriveMap& Map);
+	/** An id not currently used by any junction in Map. */
+	static FString MakeUniqueJunctionId(const FOpenDriveMap& Map);
+
+	/** Appends a new single-segment straight road with one lane section (one driving lane per side). Returns its Id. */
+	static FString AddStraightRoad(FOpenDriveMap& Map, const FString& Name, double StartX, double StartY, double StartHeadingRad, double Length);
+	/** Removes a road (and any junction connections that reference it) and rebuilds the index. */
+	static bool RemoveRoad(FOpenDriveMap& Map, const FString& RoadId);
+	/** Duplicates a road under a new Id, offset by (OffsetX, OffsetY) in the OpenDRIVE plane. Returns the new Id. */
+	static FString DuplicateRoad(FOpenDriveMap& Map, const FString& RoadId, double OffsetX, double OffsetY);
+
+	/**
+	 * Edits name/start-pose/length of a road whose reference line is a single straight segment (as created
+	 * by AddStraightRoad). Does nothing and returns false for roads with more than one geometry segment or
+	 * a non-Line segment.
+	 */
+	static bool SetStraightRoadBasics(FOpenDriveMap& Map, const FString& RoadId, const FString& NewName, double StartX, double StartY, double StartHeadingRad, double NewLength);
+	/** Renames a road without touching its geometry. */
+	static bool RenameRoad(FOpenDriveMap& Map, const FString& RoadId, const FString& NewName);
+
+	static void SetElevationProfile(FOpenDriveMap& Map, FOpenDriveRoad& Road, TArray<FOpenDriveCubic> NewProfile);
+	static void SetSuperelevationProfile(FOpenDriveMap& Map, FOpenDriveRoad& Road, TArray<FOpenDriveCubic> NewProfile);
+	static void SetLaneOffsetProfile(FOpenDriveMap& Map, FOpenDriveRoad& Road, TArray<FOpenDriveCubic> NewProfile);
+
+	/** Sets a constant width (metres) for LaneId across every lane section of Road. */
+	static bool SetLaneWidthConstant(FOpenDriveRoad& Road, int32 LaneId, double Width);
+	/** Adds a new outermost driving lane on the given side to every lane section. Returns the new lane Id. */
+	static int32 AddLane(FOpenDriveRoad& Road, bool bLeft, double Width);
+	/** Removes a lane (by Id) from every lane section. */
+	static bool RemoveLane(FOpenDriveRoad& Road, int32 LaneId);
+
+	// --- Profile <-> editable point conversion (piecewise-linear: each stored segment has C = D = 0) ----
+	/** One point per stored segment start, plus a trailing point at RoadLength holding the last segment's value. */
+	static TArray<FVector2D> ProfileToPoints(const TArray<FOpenDriveCubic>& Profile, double RoadLength);
+	/** Points must be sorted by X (S); rebuilds a piecewise-linear profile spanning [Points[0].X, Points.Last().X]. */
+	static TArray<FOpenDriveCubic> PointsToProfile(TArray<FVector2D> Points);
+};
