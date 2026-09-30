@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "AssetDefinitionDefault.h"
-#include "AssetDefinitions.generated.h"
+#include "OpenDriveAssetDefinitions.generated.h"
 
 /** Content browser definition for OpenDRIVE road network assets. */
 UCLASS()
