@@ -36,16 +36,126 @@ public:
 	/** Renames a road without touching its geometry. */
 	static bool RenameRoad(FOpenDriveMap& Map, const FString& RoadId, const FString& NewName);
 
+	// --- Plan-view geometry authoring -------------------------------------------------------------
+	/**
+	 * Appends a Line/Arc/Spiral segment to the end of Road's reference line, starting exactly where the
+	 * current last segment ends (position and heading taken from Map.EvaluateReferenceLine at Road.Length),
+	 * so appended segments are always position- and heading-continuous with what came before. Extends
+	 * Road.Length and the last lane section's EndS to match. Curvature is in 1/m (positive = left turn);
+	 * for AppendSpiral, CurvStart/CurvEnd are the curvature at the start/end of the transition. Poly3 and
+	 * ParamPoly3 segments are not authorable this way -- append/insert only covers line/arc/spiral, per the
+	 * plan's scope (numeric append, not free-form control-point dragging).
+	 */
+	static void AppendLineSegment(FOpenDriveMap& Map, FOpenDriveRoad& Road, double Length);
+	static void AppendArcSegment(FOpenDriveMap& Map, FOpenDriveRoad& Road, double Length, double Curvature);
+	static void AppendSpiralSegment(FOpenDriveMap& Map, FOpenDriveRoad& Road, double Length, double CurvStart, double CurvEnd);
+	/** Removes the last geometry segment (undoes an Append*), unless it is the road's only segment. Shrinks
+	 *  Road.Length and the last lane section's EndS to the new total length. Returns false if only one segment remains. */
+	static bool RemoveLastGeometrySegment(FOpenDriveMap& Map, FOpenDriveRoad& Road);
+	/** Human-readable one-line description of a geometry segment, for the plan-view segment list. */
+	static FString DescribeGeometrySegment(const FOpenDriveGeometry& Geo);
+
+	/**
+	 * Splits the lane section active at S into two, duplicating its lane structure (ids/types/road marks;
+	 * widths are copied as-is, so both halves start identical and can then be edited independently, e.g. to
+	 * taper a lane in/out). No-op (returns false) if S is not strictly inside a section (i.e. already a
+	 * section boundary, or outside [0, Road.Length]).
+	 */
+	static bool InsertLaneSection(FOpenDriveMap& Map, FOpenDriveRoad& Road, double S);
+
 	static void SetElevationProfile(FOpenDriveMap& Map, FOpenDriveRoad& Road, TArray<FOpenDriveCubic> NewProfile);
 	static void SetSuperelevationProfile(FOpenDriveMap& Map, FOpenDriveRoad& Road, TArray<FOpenDriveCubic> NewProfile);
 	static void SetLaneOffsetProfile(FOpenDriveMap& Map, FOpenDriveRoad& Road, TArray<FOpenDriveCubic> NewProfile);
+	/** Replaces the crossfall profile with a single-sided-Both profile built from NewProfile (radians). Any
+	 *  existing asymmetric (left/right only) crossfall data is discarded -- see FOpenDriveCrossfallEntry. */
+	static void SetCrossfallProfile(FOpenDriveMap& Map, FOpenDriveRoad& Road, TArray<FOpenDriveCubic> NewProfile);
+	/** Best-effort flattening of Road.Crossfall to a single per-s value (for display only) -- picks the "Both"
+	 *  entry where present, otherwise averages Left/Right. Use SetCrossfallProfile to write it back. */
+	static TArray<FOpenDriveCubic> ExtractCrossfallCubics(const TArray<FOpenDriveCrossfallEntry>& Crossfall);
+
+	/**
+	 * Replaces the lateral profile "shape" (road carving) with a simple symmetric crown: CrownHeight (metres,
+	 * can be negative for a gutter) at the road centre, falling linearly to 0 at +/-HalfWidth, flat beyond.
+	 * This is a deliberately simplified authoring path over the fully general (s,t) shape table -- imported
+	 * files with a real per-side shape are preserved until this is called.
+	 */
+	static void SetSymmetricCrownShape(FOpenDriveMap& Map, FOpenDriveRoad& Road, double CrownHeight, double HalfWidth);
+
+	/** Sets (or replaces) a single road-type entry at s=0, applying to the whole road. */
+	static void SetRoadType(FOpenDriveMap& Map, FOpenDriveRoad& Road, EOpenDriveRoadType Type, const FString& Country = FString());
 
 	/** Sets a constant width (metres) for LaneId across every lane section of Road. */
 	static bool SetLaneWidthConstant(FOpenDriveRoad& Road, int32 LaneId, double Width);
+	/** Sets a single, constant road mark for LaneId across every lane section of Road. */
+	static bool SetLaneRoadMarkConstant(FOpenDriveRoad& Road, int32 LaneId, const FOpenDriveRoadMarkEntry& Mark);
+	/** The road mark active at S for LaneId in Road's first lane section, or a default Solid mark if none. */
+	static FOpenDriveRoadMarkEntry GetLaneRoadMark(const FOpenDriveRoad& Road, int32 LaneId);
+	/** Every distinct lane Id present in Road's first lane section, left-to-right (descending Id). */
+	static TArray<int32> GetLaneIds(const FOpenDriveRoad& Road);
 	/** Adds a new outermost driving lane on the given side to every lane section. Returns the new lane Id. */
 	static int32 AddLane(FOpenDriveRoad& Road, bool bLeft, double Width);
 	/** Removes a lane (by Id) from every lane section. */
 	static bool RemoveLane(FOpenDriveRoad& Road, int32 LaneId);
+
+	// --- Road & lane links ----------------------------------------------------------------------
+	/**
+	 * Connects RoadA's end (bAtAEnd: true = A's successor/end, false = A's predecessor/start) to RoadB's
+	 * end (bAtBEnd likewise), setting both roads' road-level link fields, and infers + applies matching
+	 * lane-to-lane predecessor/successor links on the two touching lane sections: a lane keeps its Id when
+	 * the target is entered at its start (a straight continuation), or gets the sign-flipped Id when the
+	 * target is entered at its end (the direction of travel reverses, so left/right swap); pairs with no
+	 * matching lane on the other side are left unlinked. Overwrites whatever link each road already had on
+	 * the given end. Returns false if either road id is unknown.
+	 */
+	static bool ConnectRoadEnds(FOpenDriveMap& Map, const FString& RoadAId, bool bAtAEnd, const FString& RoadBId, bool bAtBEnd);
+	/** Clears Road's predecessor or successor link (road-level only; existing lane links are left as-is). */
+	static void ClearRoadLink(FOpenDriveRoad& Road, bool bSuccessor);
+
+	// --- Junctions --------------------------------------------------------------------------------
+	/** Creates an empty junction. Returns its Id. */
+	static FString AddJunction(FOpenDriveMap& Map, const FString& Name);
+	/** Removes a junction and clears the junction="" flag it may have set on its connecting roads. */
+	static bool RemoveJunction(FOpenDriveMap& Map, const FString& JunctionId);
+	/**
+	 * Adds a connection from IncomingRoadId (entered at its end given by bAtIncomingEnd) to ConnectingRoadId
+	 * (entered at Contact) inside Junction: sets IncomingRoad's road-level link on that end to point at the
+	 * junction, marks ConnectingRoad as belonging to it (Road.JunctionId), and infers + applies lane links
+	 * the same way ConnectRoadEnds does (matching Id, or sign-flipped when Contact is End). Returns the new
+	 * connection's Id, or an empty string if the junction or either road is unknown.
+	 */
+	static FString AddJunctionConnection(FOpenDriveMap& Map, const FString& JunctionId, const FString& IncomingRoadId, bool bAtIncomingEnd, const FString& ConnectingRoadId, EOpenDriveContactPoint Contact);
+	static bool RemoveJunctionConnection(FOpenDriveMap& Map, const FString& JunctionId, const FString& ConnectionId);
+
+	// --- Signals -------------------------------------------------------------------------------
+	enum class ESignalPreset : uint8 { StopSign, YieldSign, SpeedLimit, TrafficLight };
+
+	/**
+	 * Adds a signal at (S, T) using a preset that fills in the ASAM/Vienna Convention codes the spec's own
+	 * examples use, so the caller doesn't need to know them: StopSign/YieldSign use country "DE" (206/205);
+	 * SpeedLimit uses "DE" 274 with SpeedLimitKmh as its value; TrafficLight uses the generic country
+	 * "OpenDRIVE" type 1000001 (a standard 3-aspect signal) and is marked dynamic. Returns the new signal's Id.
+	 */
+	static FString AddSignal(FOpenDriveRoad& Road, ESignalPreset Preset, double S, double T, double SpeedLimitKmh = 50.0);
+	static bool RemoveSignal(FOpenDriveRoad& Road, const FString& SignalId);
+	static bool SetSignalPose(FOpenDriveRoad& Road, const FString& SignalId, double S, double T, double ZOffset, double HOffsetRad);
+
+	// --- Objects (static props: poles, trees, barriers, ...) -------------------------------------
+	/** Adds a box-footprint object (Length/Width/Height) at (S, T) with the given free-form Type string
+	 *  (e.g. "pole", "tree", "barrier" -- the spec's suggested categories, but any string is accepted).
+	 *  Returns the new object's Id. */
+	static FString AddObject(FOpenDriveRoad& Road, const FString& Type, double S, double T, double Length, double Width, double Height);
+	/** Adds a round-footprint object (Radius) at (S, T), e.g. a pole or tree trunk. Returns the new object's Id. */
+	static FString AddRoundObject(FOpenDriveRoad& Road, const FString& Type, double S, double T, double Radius, double Height);
+	static bool RemoveObject(FOpenDriveRoad& Road, const FString& ObjectId);
+	static bool SetObjectPose(FOpenDriveRoad& Road, const FString& ObjectId, double S, double T, double ZOffset, double HOffsetRad);
+
+	// --- Junction groups (e.g. splitting a roundabout into several <junction> elements) -----------
+	/** Creates an empty junction group (Type is typically "roundabout", but stored verbatim). Returns its Id. */
+	static FString AddJunctionGroup(FOpenDriveMap& Map, const FString& Name, const FString& Type);
+	static bool RemoveJunctionGroup(FOpenDriveMap& Map, const FString& JunctionGroupId);
+	/** Adds JunctionId to the group's member list if not already present. Returns false if the group is unknown. */
+	static bool AddJunctionToGroup(FOpenDriveMap& Map, const FString& JunctionGroupId, const FString& JunctionId);
+	static bool RemoveJunctionFromGroup(FOpenDriveMap& Map, const FString& JunctionGroupId, const FString& JunctionId);
 
 	// --- Profile <-> editable point conversion (piecewise-linear: each stored segment has C = D = 0) ----
 	/** One point per stored segment start, plus a trailing point at RoadLength holding the last segment's value. */

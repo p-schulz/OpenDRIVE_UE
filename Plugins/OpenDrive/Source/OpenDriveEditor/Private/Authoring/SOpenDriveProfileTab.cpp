@@ -14,13 +14,59 @@ namespace
 {
 	constexpr double RadToDeg = 180.0 / UE_DOUBLE_PI;
 	constexpr double DegToRad = UE_DOUBLE_PI / 180.0;
+
+	bool IsAngleKind(EOpenDriveProfileKind Kind)
+	{
+		return Kind == EOpenDriveProfileKind::Superelevation || Kind == EOpenDriveProfileKind::Crossfall;
+	}
+
+	FText KindTitle(EOpenDriveProfileKind Kind)
+	{
+		switch (Kind)
+		{
+		case EOpenDriveProfileKind::Superelevation: return NSLOCTEXT("OpenDriveProfileTab", "Superelevation", "Superelevation");
+		case EOpenDriveProfileKind::LaneOffset: return NSLOCTEXT("OpenDriveProfileTab", "LaneOffset", "Lane Offset");
+		case EOpenDriveProfileKind::Crossfall: return NSLOCTEXT("OpenDriveProfileTab", "Crossfall", "Crossfall");
+		case EOpenDriveProfileKind::Elevation:
+		default:
+			return NSLOCTEXT("OpenDriveProfileTab", "Elevation", "Elevation");
+		}
+	}
+
+	/** Read-only snapshot of the profile as plain cubics, for populating the graph. */
+	TArray<FOpenDriveCubic> GetProfileCubics(EOpenDriveProfileKind Kind, const FOpenDriveRoad& Road)
+	{
+		switch (Kind)
+		{
+		case EOpenDriveProfileKind::Superelevation: return Road.Superelevation;
+		case EOpenDriveProfileKind::LaneOffset: return Road.LaneOffset;
+		case EOpenDriveProfileKind::Crossfall: return FOpenDriveModelEdit::ExtractCrossfallCubics(Road.Crossfall);
+		case EOpenDriveProfileKind::Elevation:
+		default:
+			return Road.Elevation;
+		}
+	}
+
+	void SetProfileCubics(EOpenDriveProfileKind Kind, FOpenDriveMap& Map, FOpenDriveRoad& Road, TArray<FOpenDriveCubic> NewProfile)
+	{
+		switch (Kind)
+		{
+		case EOpenDriveProfileKind::Superelevation: FOpenDriveModelEdit::SetSuperelevationProfile(Map, Road, MoveTemp(NewProfile)); break;
+		case EOpenDriveProfileKind::LaneOffset: FOpenDriveModelEdit::SetLaneOffsetProfile(Map, Road, MoveTemp(NewProfile)); break;
+		case EOpenDriveProfileKind::Crossfall: FOpenDriveModelEdit::SetCrossfallProfile(Map, Road, MoveTemp(NewProfile)); break;
+		case EOpenDriveProfileKind::Elevation:
+		default:
+			FOpenDriveModelEdit::SetElevationProfile(Map, Road, MoveTemp(NewProfile));
+			break;
+		}
+	}
 }
 
 void SOpenDriveProfileTab::Construct(const FArguments& InArgs, FOpenDriveEditorContext& InContext, EOpenDriveProfileKind InKind)
 {
 	Context = &InContext;
 	Kind = InKind;
-	const bool bSuperelevation = (Kind == EOpenDriveProfileKind::Superelevation);
+	const bool bAngle = IsAngleKind(Kind);
 
 	ChildSlot
 	[
@@ -37,7 +83,7 @@ void SOpenDriveProfileTab::Construct(const FArguments& InArgs, FOpenDriveEditorC
 				SAssignNew(Graph, SOpenDriveProfileGraph)
 				.MinX(this, &SOpenDriveProfileTab::GetMinX)
 				.MaxX(this, &SOpenDriveProfileTab::GetMaxX)
-				.ValueUnit(bSuperelevation ? TEXT("°") : TEXT("m"))
+				.ValueUnit(bAngle ? TEXT("°") : TEXT("m"))
 				.OnPointsChanged(this, &SOpenDriveProfileTab::OnGraphPointsChanged)
 			]
 		]
@@ -66,7 +112,7 @@ double SOpenDriveProfileTab::GetMaxX() const
 FText SOpenDriveProfileTab::GetHeaderText() const
 {
 	const FOpenDriveRoad* Road = Context ? Context->GetSelectedRoad() : nullptr;
-	const FText Title = (Kind == EOpenDriveProfileKind::Superelevation) ? LOCTEXT("Superelevation", "Superelevation") : LOCTEXT("Elevation", "Elevation");
+	const FText Title = KindTitle(Kind);
 	if (!Road)
 	{
 		return FText::Format(LOCTEXT("NoRoad", "{0}: no road selected. Pick one in the Road List tab."), Title);
@@ -87,9 +133,9 @@ void SOpenDriveProfileTab::RefreshFromSelection()
 		return;
 	}
 
-	const TArray<FOpenDriveCubic>& Profile = (Kind == EOpenDriveProfileKind::Superelevation) ? Road->Superelevation : Road->Elevation;
+	const TArray<FOpenDriveCubic> Profile = GetProfileCubics(Kind, *Road);
 	TArray<FVector2D> Points = FOpenDriveModelEdit::ProfileToPoints(Profile, Road->Length);
-	if (Kind == EOpenDriveProfileKind::Superelevation)
+	if (IsAngleKind(Kind))
 	{
 		for (FVector2D& P : Points)
 		{
@@ -112,7 +158,7 @@ void SOpenDriveProfileTab::OnGraphPointsChanged(const TArray<FVector2D>& Points)
 	}
 
 	TArray<FVector2D> Converted = Points;
-	if (Kind == EOpenDriveProfileKind::Superelevation)
+	if (IsAngleKind(Kind))
 	{
 		for (FVector2D& P : Converted)
 		{
@@ -120,15 +166,7 @@ void SOpenDriveProfileTab::OnGraphPointsChanged(const TArray<FVector2D>& Points)
 		}
 	}
 	TArray<FOpenDriveCubic> NewProfile = FOpenDriveModelEdit::PointsToProfile(MoveTemp(Converted));
-
-	if (Kind == EOpenDriveProfileKind::Superelevation)
-	{
-		FOpenDriveModelEdit::SetSuperelevationProfile(Context->GetWorking(), *Road, MoveTemp(NewProfile));
-	}
-	else
-	{
-		FOpenDriveModelEdit::SetElevationProfile(Context->GetWorking(), *Road, MoveTemp(NewProfile));
-	}
+	SetProfileCubics(Kind, Context->GetWorking(), *Road, MoveTemp(NewProfile));
 	Context->NotifyValueChanged();
 }
 

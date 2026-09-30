@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "OpenDrive/OpenDriveMap.h"
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/Views/SListView.h"
@@ -46,10 +47,76 @@ private:
 	void ApplyBasics(double NewX, double NewY, double NewHeadingDeg, double NewLength);
 	FText GetInfoText() const;
 
+	// Road type
+	FText GetRoadTypeText() const;
+	TSharedRef<SWidget> BuildRoadTypeMenu();
+	void OnRoadTypePicked(EOpenDriveRoadType Type);
+
+	// Cross-section shape ("road carving")
+	double GetCrownHeight() const { return PendingCrownHeight; }
+	double GetCrownHalfWidth() const { return PendingCrownHalfWidth; }
+	void OnCrownHeightChanged(double V) { PendingCrownHeight = V; }
+	void OnCrownHalfWidthChanged(double V) { PendingCrownHalfWidth = FMath::Max(0.1, V); }
+	FReply OnApplyCrownShapeClicked();
+	FReply OnClearCrownShapeClicked();
+
+	// Road marks
+	FText GetSelectedLaneText() const;
+	TSharedRef<SWidget> BuildLaneMenu();
+	void OnLanePicked(int32 LaneId);
+	FText GetMarkTypeText() const;
+	TSharedRef<SWidget> BuildMarkTypeMenu();
+	void OnMarkTypePicked(EOpenDriveRoadMarkType Type);
+	FText GetMarkColorText() const;
+	TSharedRef<SWidget> BuildMarkColorMenu();
+	void OnMarkColorPicked(EOpenDriveRoadMarkColor Color);
+	ECheckBoxState GetMarkBoldState() const;
+	void OnMarkBoldChanged(ECheckBoxState NewState);
+	bool HasLaneSelection() const;
+	FReply OnApplyRoadMarkClicked();
+
+	// Road links
+	TSharedRef<SWidget> BuildRoadPickerMenu(TFunction<void(FString)> OnPicked) const;
+	FReply OnSetPredecessorClicked();
+	FReply OnSetSuccessorClicked();
+	FReply OnClearPredecessorClicked();
+	FReply OnClearSuccessorClicked();
+	FText GetLinkSummaryText() const;
+
+	// Junctions
+	TSharedRef<SWidget> BuildJunctionMenu();
+	void OnJunctionPicked(FString JunctionId);
+	bool HasJunctionSelection() const;
+	FReply OnAddJunctionClicked();
+	FReply OnRemoveJunctionClicked();
+	TSharedRef<SWidget> BuildConnectionMenu();
+	void OnConnectionPicked(FString ConnectionId);
+	FReply OnAddConnectionClicked();
+	FReply OnRemoveConnectionClicked();
+	FText GetJunctionSummaryText() const;
+
 	FOpenDriveEditorContext* Context = nullptr;
 	TArray<FRowPtr> Rows;
 	TSharedPtr<SListView<FRowPtr>> List;
 	FDelegateHandle StructureHandle;
 	FDelegateHandle SelectionHandle;
 	bool bUpdatingSelection = false;
+	double PendingCrownHeight = 0.05;
+	double PendingCrownHalfWidth = 1.75;
+
+	static constexpr int32 NoLaneSelected = MAX_int32;
+	int32 SelectedLaneId = NoLaneSelected;
+	EOpenDriveRoadMarkType PendingMarkType = EOpenDriveRoadMarkType::Solid;
+	EOpenDriveRoadMarkColor PendingMarkColor = EOpenDriveRoadMarkColor::Standard;
+	bool bPendingMarkBold = false;
+
+	FString PendingLinkTargetRoad;
+	bool bPendingLinkTargetEnd = false;
+
+	FString SelectedJunctionId;
+	FString PendingIncomingRoad;
+	bool bPendingIncomingEnd = true;
+	FString PendingConnectingRoad;
+	bool bPendingConnectingEnd = false;
+	FString SelectedConnectionId;
 };

@@ -27,7 +27,9 @@ public class OpenDriveEditor : ModuleRules
 			"AssetTools",
 			"AssetRegistry",
 			"AssetDefinition",
-			"WorkspaceMenuStructure"
+			"WorkspaceMenuStructure",
+			"MeshDescription",
+			"StaticMeshDescription"
 		});
 	}
 }

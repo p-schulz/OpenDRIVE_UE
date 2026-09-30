@@ -15,6 +15,12 @@ public:
 	static const FName RoadListTabId;
 	static const FName ElevationTabId;
 	static const FName SuperelevationTabId;
+	static const FName LaneOffsetTabId;
+	static const FName CrossfallTabId;
+	static const FName SignalsTabId;
+	static const FName PlanViewTabId;
+	static const FName ObjectsTabId;
+	static const FName JunctionGroupsTabId;
 
 	static FOpenDriveEditorModule& Get();
 
@@ -28,11 +34,23 @@ public:
 	void OpenRoadListTab() const;
 	void OpenElevationTab() const;
 	void OpenSuperelevationTab() const;
+	void OpenLaneOffsetTab() const;
+	void OpenCrossfallTab() const;
+	void OpenSignalsTab() const;
+	void OpenPlanViewTab() const;
+	void OpenObjectsTab() const;
+	void OpenJunctionGroupsTab() const;
 
 private:
 	TSharedRef<SDockTab> SpawnRoadListTab(const FSpawnTabArgs& Args);
 	TSharedRef<SDockTab> SpawnElevationTab(const FSpawnTabArgs& Args);
 	TSharedRef<SDockTab> SpawnSuperelevationTab(const FSpawnTabArgs& Args);
+	TSharedRef<SDockTab> SpawnLaneOffsetTab(const FSpawnTabArgs& Args);
+	TSharedRef<SDockTab> SpawnCrossfallTab(const FSpawnTabArgs& Args);
+	TSharedRef<SDockTab> SpawnSignalsTab(const FSpawnTabArgs& Args);
+	TSharedRef<SDockTab> SpawnPlanViewTab(const FSpawnTabArgs& Args);
+	TSharedRef<SDockTab> SpawnObjectsTab(const FSpawnTabArgs& Args);
+	TSharedRef<SDockTab> SpawnJunctionGroupsTab(const FSpawnTabArgs& Args);
 
 	TSharedPtr<FOpenDriveEditorContext> Context;
 	TSharedPtr<FOpenDriveMapVisualizer> Visualizer;

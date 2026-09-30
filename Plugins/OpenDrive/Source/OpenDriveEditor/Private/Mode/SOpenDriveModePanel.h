@@ -22,6 +22,8 @@ private:
 	void OnAssetPicked(const FAssetData& AssetData);
 	FString GetAssetPath() const;
 	FReply OnImport();
+	FReply OnGenerateMeshes();
+	FReply OnBakeSelectedRoad();
 	FText GetInfoText() const;
 
 	FOpenDriveEditorContext* Context = nullptr;

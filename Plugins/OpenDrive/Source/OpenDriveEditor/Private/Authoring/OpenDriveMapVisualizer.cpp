@@ -12,6 +12,52 @@ namespace
 	{
 		return FVector(X * 100.0, -Y * 100.0, Z * 100.0);
 	}
+
+	FColor RoadMarkFColor(EOpenDriveRoadMarkColor Color)
+	{
+		switch (Color)
+		{
+		case EOpenDriveRoadMarkColor::Yellow: return FColor(230, 200, 40);
+		case EOpenDriveRoadMarkColor::Red: return FColor(220, 60, 60);
+		case EOpenDriveRoadMarkColor::Blue: return FColor(60, 120, 220);
+		case EOpenDriveRoadMarkColor::Green: return FColor(60, 200, 90);
+		case EOpenDriveRoadMarkColor::Orange: return FColor(230, 140, 40);
+		case EOpenDriveRoadMarkColor::Violet: return FColor(170, 90, 220);
+		case EOpenDriveRoadMarkColor::Standard:
+		default:
+			return FColor(230, 230, 230);
+		}
+	}
+
+	/** A rough colour per signal so a road's signs/lights are distinguishable at a glance. Real
+	 *  type/subtype meaning (e.g. which physical sign a code corresponds to) is left to Phase 7's mesh
+	 *  generation and any content the project assigns; this is a debug-view approximation only. */
+	FColor SignalDebugColor(const FOpenDriveSignal& Sig)
+	{
+		if (Sig.bDynamic)
+		{
+			return FColor(230, 40, 40); // traffic light: default to the "stop" aspect
+		}
+		if (Sig.Type == TEXT("206")) { return FColor(220, 50, 50); } // stop
+		if (Sig.Type == TEXT("205")) { return FColor(230, 200, 40); } // yield
+		if (Sig.Type == TEXT("274")) { return FColor(240, 240, 240); } // speed limit
+		return FColor(200, 160, 60);
+	}
+
+	/** Approximate dash pattern for "broken" marks: ~3 m painted, ~3 m gap. Every other type (aside from
+	 *  None) is drawn as a continuous line -- distinguishing double lines/botts dots/curbs is Phase 7's job. */
+	bool ShouldDrawMarkSegment(EOpenDriveRoadMarkType Type, double SegmentMidS)
+	{
+		if (Type == EOpenDriveRoadMarkType::None)
+		{
+			return false;
+		}
+		if (Type == EOpenDriveRoadMarkType::Broken || Type == EOpenDriveRoadMarkType::BrokenBroken)
+		{
+			return (static_cast<int64>(FMath::FloorToDouble(SegmentMidS / 3.0)) % 2) == 0;
+		}
+		return true;
+	}
 }
 
 void FOpenDriveMapVisualizer::AddArrow(const FVector& From, const FVector& To, const FColor& Color, float Thickness)
@@ -57,12 +103,14 @@ void FOpenDriveMapVisualizer::Rebuild(FOpenDriveEditorContext& Context)
 
 		bool bHavePrev = false;
 		FVector PrevRef = FVector::ZeroVector;
+		double PrevS = 0.0;
 		TMap<int32, FVector> PrevBorder;
 		TMap<int32, FVector> PrevCenter;
 
 		for (int32 i = 0; i <= N; ++i)
 		{
 			const double S = FMath::Min(Road.Length, i * Step);
+			const double MidS = 0.5 * (PrevS + S);
 
 			const FVector Ref = ToWorld(Map.EvaluatePose(Road, S, Map.GetLaneOffset(Road, S)));
 			if (bHavePrev && Opt.bDrawReferenceLines)
@@ -74,6 +122,7 @@ void FOpenDriveMapVisualizer::Rebuild(FOpenDriveEditorContext& Context)
 
 			TMap<int32, FVector> CurBorder;
 			TMap<int32, FVector> CurCenter;
+			TMap<int32, const FOpenDriveRoadMarkEntry*> CurMarks;
 			if (const FOpenDriveLaneSection* Section = Map.FindLaneSection(Road, S))
 			{
 				for (const FOpenDriveLane& Lane : Section->Lanes)
@@ -83,16 +132,26 @@ void FOpenDriveMapVisualizer::Rebuild(FOpenDriveEditorContext& Context)
 					const double Outer = Center + (Lane.Id > 0 ? Half : -Half);
 					CurBorder.Add(Lane.Id, ToWorld(Map.EvaluatePose(Road, S, Outer)));
 					CurCenter.Add(Lane.Id, ToWorld(Map.EvaluatePose(Road, S, Center)));
+					CurMarks.Add(Lane.Id, Lane.FindRoadMarkAt(MidS));
 				}
 			}
 			if (Opt.bDrawLaneBorders)
 			{
 				for (const TPair<int32, FVector>& Pair : CurBorder)
 				{
-					if (const FVector* Prev = PrevBorder.Find(Pair.Key))
+					const FVector* Prev = PrevBorder.Find(Pair.Key);
+					if (!Prev)
 					{
-						Lines.Add({ *Prev, Pair.Value, bSelected ? SelectedColor : (bJunction ? JunctionColor : BorderColor), Thickness * 0.75f });
+						continue;
 					}
+					const auto* MarkPtr = CurMarks.Find(Pair.Key);
+					const FOpenDriveRoadMarkEntry* Mark = MarkPtr ? *MarkPtr : nullptr;
+					if (Mark && !ShouldDrawMarkSegment(Mark->Type, MidS))
+					{
+						continue;
+					}
+					const FColor MarkColor = bSelected ? SelectedColor : (bJunction ? JunctionColor : (Mark ? RoadMarkFColor(Mark->Color) : BorderColor));
+					Lines.Add({ *Prev, Pair.Value, MarkColor, Thickness * 0.75f });
 				}
 			}
 			if (Opt.bDrawLaneCenters)
@@ -107,6 +166,7 @@ void FOpenDriveMapVisualizer::Rebuild(FOpenDriveEditorContext& Context)
 			}
 			PrevBorder = MoveTemp(CurBorder);
 			PrevCenter = MoveTemp(CurCenter);
+			PrevS = S;
 		}
 
 		if (Opt.bDrawDirectionArrows)
@@ -138,6 +198,24 @@ void FOpenDriveMapVisualizer::Rebuild(FOpenDriveEditorContext& Context)
 			const double S = 0.5 * Road.Length;
 			Labels.Add({ ToWorld(Map.EvaluatePose(Road, S, Map.GetLaneOffset(Road, S)), 30.0),
 				FString::Printf(TEXT("road %s%s"), *Road.Id, Road.IsJunctionRoad() ? TEXT(" (junction)") : TEXT("")), RoadRefColor });
+		}
+
+		if (Opt.bDrawSignals)
+		{
+			for (const FOpenDriveSignal& Sig : Road.Signals)
+			{
+				FOpenDrivePose Pose = Map.EvaluatePose(Road, Sig.S, Sig.T);
+				Pose.Z += Sig.ZOffset;
+				const FVector Base = ToWorld(Pose);
+				const double PoleHeightCm = FMath::Max(50.0, Sig.Height * 100.0);
+				const FVector Top = Base + FVector(0, 0, PoleHeightCm);
+				const FColor Color = SignalDebugColor(Sig);
+				Lines.Add({ Base, Top, Color, Thickness * 1.25f });
+				// A small horizontal marker at the top so the pole isn't just a bare vertical line.
+				const FVector Side = Origin.TransformVector(FVector(0, FMath::Max(15.0, Sig.Width * 50.0), 0));
+				Lines.Add({ Top - Side, Top + Side, Color, Thickness * 1.5f });
+				Labels.Add({ Top + FVector(0, 0, 15.0), FString::Printf(TEXT("%s%s"), *Sig.Name, Sig.bDynamic ? TEXT(" (dynamic)") : TEXT("")), Color });
+			}
 		}
 	}
 

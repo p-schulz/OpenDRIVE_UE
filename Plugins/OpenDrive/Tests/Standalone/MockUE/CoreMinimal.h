@@ -112,7 +112,11 @@ public:
 	void Insert(const T& t, int32 i) { V.insert(V.begin() + i, t); }
 	void Swap(int32 a, int32 b) { std::swap(V[a], V[b]); }
 	bool Contains(const T& t) const { for (auto& x : V) if (x == t) return true; return false; }
+	int32 AddUnique(const T& t) { if (Contains(t)) return IndexOfByPredicate([&](const T& x) { return x == t; }); return Add(t); }
+	int32 Remove(const T& t) { int32 n = 0; for (size_t i = 0; i < V.size();) { if (V[i] == t) { V.erase(V.begin() + i); ++n; } else { ++i; } } return n; }
 	template <class P> int32 IndexOfByPredicate(P p) const { for (size_t i = 0; i < V.size(); ++i) if (p(V[i])) return (int32)i; return INDEX_NONE; }
+	template <class P> const T* FindByPredicate(P p) const { for (auto& x : V) if (p(x)) return &x; return nullptr; }
+	template <class P> T* FindByPredicate(P p) { for (auto& x : V) if (p(x)) return &x; return nullptr; }
 	template <class P> int32 RemoveAll(P p) { int32 n = 0; for (size_t i = 0; i < V.size();) { if (p(V[i])) { V.erase(V.begin() + i); ++n; } else { ++i; } } return n; }
 };
 namespace Algo { template <class A> void Reverse(A& a) { std::reverse(a.V.begin(), a.V.end()); } }
@@ -172,7 +176,11 @@ struct FVector {
 	FVector operator*(double s) const { return FVector(X * s, Y * s, Z * s); }
 	double Size() const { return std::sqrt(X * X + Y * Y + Z * Z); }
 	double SizeSquared2D() const { return X * X + Y * Y; }
+	FVector GetSafeNormal(double Tolerance = 1e-8) const { const double L = Size(); return L > Tolerance ? FVector(X / L, Y / L, Z / L) : FVector(0, 0, 0); }
+	static FVector CrossProduct(const FVector& A, const FVector& B) { return FVector(A.Y * B.Z - A.Z * B.Y, A.Z * B.X - A.X * B.Z, A.X * B.Y - A.Y * B.X); }
+	static double DotProduct(const FVector& A, const FVector& B) { return A.X * B.X + A.Y * B.Y + A.Z * B.Z; }
 	static FVector OneVector;
+	static FVector UpVector;
 };
 struct FVector2D {
 	double X = 0, Y = 0;

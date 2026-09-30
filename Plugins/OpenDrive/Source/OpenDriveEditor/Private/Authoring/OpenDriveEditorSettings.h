@@ -41,6 +41,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Visualization")
 	bool bHighlightSelection = true;
 
+	/** Draws a pole + label for each road's signs and traffic lights. */
+	UPROPERTY(EditAnywhere, Category = "Visualization")
+	bool bDrawSignals = true;
+
 	/** Sampling distance along roads in metres. Larger values draw faster and coarser. */
 	UPROPERTY(EditAnywhere, Category = "Visualization", meta = (ClampMin = "0.25", ClampMax = "50.0"))
 	float SampleStep = 2.0f;
