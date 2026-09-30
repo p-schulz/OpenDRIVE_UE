@@ -70,6 +70,35 @@ public:
 	/** Removes a lane (by Id) from every lane section. */
 	static bool RemoveLane(FOpenDriveRoad& Road, int32 LaneId);
 
+	// --- Road & lane links ----------------------------------------------------------------------
+	/**
+	 * Connects RoadA's end (bAtAEnd: true = A's successor/end, false = A's predecessor/start) to RoadB's
+	 * end (bAtBEnd likewise), setting both roads' road-level link fields, and infers + applies matching
+	 * lane-to-lane predecessor/successor links on the two touching lane sections: a lane keeps its Id when
+	 * the target is entered at its start (a straight continuation), or gets the sign-flipped Id when the
+	 * target is entered at its end (the direction of travel reverses, so left/right swap); pairs with no
+	 * matching lane on the other side are left unlinked. Overwrites whatever link each road already had on
+	 * the given end. Returns false if either road id is unknown.
+	 */
+	static bool ConnectRoadEnds(FOpenDriveMap& Map, const FString& RoadAId, bool bAtAEnd, const FString& RoadBId, bool bAtBEnd);
+	/** Clears Road's predecessor or successor link (road-level only; existing lane links are left as-is). */
+	static void ClearRoadLink(FOpenDriveRoad& Road, bool bSuccessor);
+
+	// --- Junctions --------------------------------------------------------------------------------
+	/** Creates an empty junction. Returns its Id. */
+	static FString AddJunction(FOpenDriveMap& Map, const FString& Name);
+	/** Removes a junction and clears the junction="" flag it may have set on its connecting roads. */
+	static bool RemoveJunction(FOpenDriveMap& Map, const FString& JunctionId);
+	/**
+	 * Adds a connection from IncomingRoadId (entered at its end given by bAtIncomingEnd) to ConnectingRoadId
+	 * (entered at Contact) inside Junction: sets IncomingRoad's road-level link on that end to point at the
+	 * junction, marks ConnectingRoad as belonging to it (Road.JunctionId), and infers + applies lane links
+	 * the same way ConnectRoadEnds does (matching Id, or sign-flipped when Contact is End). Returns the new
+	 * connection's Id, or an empty string if the junction or either road is unknown.
+	 */
+	static FString AddJunctionConnection(FOpenDriveMap& Map, const FString& JunctionId, const FString& IncomingRoadId, bool bAtIncomingEnd, const FString& ConnectingRoadId, EOpenDriveContactPoint Contact);
+	static bool RemoveJunctionConnection(FOpenDriveMap& Map, const FString& JunctionId, const FString& ConnectionId);
+
 	// --- Profile <-> editable point conversion (piecewise-linear: each stored segment has C = D = 0) ----
 	/** One point per stored segment start, plus a trailing point at RoadLength holding the last segment's value. */
 	static TArray<FVector2D> ProfileToPoints(const TArray<FOpenDriveCubic>& Profile, double RoadLength);

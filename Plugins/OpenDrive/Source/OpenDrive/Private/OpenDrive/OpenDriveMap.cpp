@@ -529,6 +529,42 @@ bool FOpenDriveMap::LoadFromString(const FString& Xml, FString& OutError)
 							Lane.RoadMarks.Add(Entry);
 						}
 						Lane.RoadMarks.Sort([](const FOpenDriveRoadMarkEntry& A, const FOpenDriveRoadMarkEntry& B) { return A.S < B.S; });
+						for (const FXmlNode* Mat : ODRXml::Children(LaneNode, TEXT("material")))
+						{
+							FOpenDriveLaneMaterialEntry Entry;
+							Entry.S = Section.S + AttrD(Mat, TEXT("sOffset"));
+							Entry.Friction = AttrD(Mat, TEXT("friction"), 1.0);
+							Entry.Roughness = AttrD(Mat, TEXT("roughness"), 0.0);
+							Entry.Surface = AttrS(Mat, TEXT("surface"));
+							Lane.Materials.Add(Entry);
+						}
+						Lane.Materials.Sort([](const FOpenDriveLaneMaterialEntry& A, const FOpenDriveLaneMaterialEntry& B) { return A.S < B.S; });
+						for (const FXmlNode* Acc : ODRXml::Children(LaneNode, TEXT("access")))
+						{
+							FOpenDriveLaneAccessEntry Entry;
+							Entry.S = Section.S + AttrD(Acc, TEXT("sOffset"));
+							Entry.bAllow = !AttrS(Acc, TEXT("rule")).Equals(TEXT("deny"), ESearchCase::IgnoreCase);
+							Entry.Restriction = AttrS(Acc, TEXT("restriction"));
+							Lane.Access.Add(Entry);
+						}
+						Lane.Access.Sort([](const FOpenDriveLaneAccessEntry& A, const FOpenDriveLaneAccessEntry& B) { return A.S < B.S; });
+						for (const FXmlNode* Rule : ODRXml::Children(LaneNode, TEXT("rule")))
+						{
+							FOpenDriveLaneRuleEntry Entry;
+							Entry.S = Section.S + AttrD(Rule, TEXT("sOffset"));
+							Entry.Value = AttrS(Rule, TEXT("value"));
+							Lane.Rules.Add(Entry);
+						}
+						Lane.Rules.Sort([](const FOpenDriveLaneRuleEntry& A, const FOpenDriveLaneRuleEntry& B) { return A.S < B.S; });
+						for (const FXmlNode* Ht : ODRXml::Children(LaneNode, TEXT("height")))
+						{
+							FOpenDriveLaneHeightEntry Entry;
+							Entry.S = Section.S + AttrD(Ht, TEXT("sOffset"));
+							Entry.InnerHeight = AttrD(Ht, TEXT("inner"), 0.0);
+							Entry.OuterHeight = AttrD(Ht, TEXT("outer"), 0.0);
+							Lane.Heights.Add(Entry);
+						}
+						Lane.Heights.Sort([](const FOpenDriveLaneHeightEntry& A, const FOpenDriveLaneHeightEntry& B) { return A.S < B.S; });
 						Section.Lanes.Add(MoveTemp(Lane));
 					}
 				}

@@ -75,6 +75,26 @@ private:
 	bool HasLaneSelection() const;
 	FReply OnApplyRoadMarkClicked();
 
+	// Road links
+	TSharedRef<SWidget> BuildRoadPickerMenu(TFunction<void(FString)> OnPicked) const;
+	FReply OnSetPredecessorClicked();
+	FReply OnSetSuccessorClicked();
+	FReply OnClearPredecessorClicked();
+	FReply OnClearSuccessorClicked();
+	FText GetLinkSummaryText() const;
+
+	// Junctions
+	TSharedRef<SWidget> BuildJunctionMenu();
+	void OnJunctionPicked(FString JunctionId);
+	bool HasJunctionSelection() const;
+	FReply OnAddJunctionClicked();
+	FReply OnRemoveJunctionClicked();
+	TSharedRef<SWidget> BuildConnectionMenu();
+	void OnConnectionPicked(FString ConnectionId);
+	FReply OnAddConnectionClicked();
+	FReply OnRemoveConnectionClicked();
+	FText GetJunctionSummaryText() const;
+
 	FOpenDriveEditorContext* Context = nullptr;
 	TArray<FRowPtr> Rows;
 	TSharedPtr<SListView<FRowPtr>> List;
@@ -89,4 +109,14 @@ private:
 	EOpenDriveRoadMarkType PendingMarkType = EOpenDriveRoadMarkType::Solid;
 	EOpenDriveRoadMarkColor PendingMarkColor = EOpenDriveRoadMarkColor::Standard;
 	bool bPendingMarkBold = false;
+
+	FString PendingLinkTargetRoad;
+	bool bPendingLinkTargetEnd = false;
+
+	FString SelectedJunctionId;
+	FString PendingIncomingRoad;
+	bool bPendingIncomingEnd = true;
+	FString PendingConnectingRoad;
+	bool bPendingConnectingEnd = false;
+	FString SelectedConnectionId;
 };

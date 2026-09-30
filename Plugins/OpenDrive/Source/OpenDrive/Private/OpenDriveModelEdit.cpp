@@ -1,5 +1,34 @@
 #include "OpenDriveModelEdit.h"
 
+namespace
+{
+	/**
+	 * Matches lanes between two touching lane sections and sets Predecessor/Successor on both sides: a lane
+	 * keeps its Id when the far section is entered at its start (straight continuation), or gets the sign-
+	 * flipped Id when entered at its end (direction of travel reverses, so left/right swap). Lane 0 (the
+	 * centre lane) is never linked. Pairs with no matching lane on the far side are left unlinked.
+	 */
+	void InferAndApplyLaneLinks(FOpenDriveLaneSection& SecA, bool bAtAEnd, FOpenDriveLaneSection& SecB, bool bAtBEnd)
+	{
+		const bool bFlip = bAtBEnd;
+		for (FOpenDriveLane& LaneA : SecA.Lanes)
+		{
+			if (LaneA.Id == 0)
+			{
+				continue;
+			}
+			const int32 TargetId = bFlip ? -LaneA.Id : LaneA.Id;
+			FOpenDriveLane* LaneB = SecB.FindLaneMutable(TargetId);
+			if (!LaneB)
+			{
+				continue;
+			}
+			if (bAtAEnd) { LaneA.Successor = TargetId; } else { LaneA.Predecessor = TargetId; }
+			if (bAtBEnd) { LaneB->Successor = LaneA.Id; } else { LaneB->Predecessor = LaneA.Id; }
+		}
+	}
+}
+
 FString FOpenDriveModelEdit::MakeUniqueRoadId(const FOpenDriveMap& Map)
 {
 	int32 MaxId = 0;
@@ -356,6 +385,149 @@ bool FOpenDriveModelEdit::RemoveLane(FOpenDriveRoad& Road, int32 LaneId)
 		bFound |= (Section.Lanes.RemoveAll([&](const FOpenDriveLane& L) { return L.Id == LaneId; }) > 0);
 	}
 	return bFound;
+}
+
+// ------------------------------------------------------------------------------------------------
+// Road & lane links
+// ------------------------------------------------------------------------------------------------
+
+bool FOpenDriveModelEdit::ConnectRoadEnds(FOpenDriveMap& Map, const FString& RoadAId, bool bAtAEnd, const FString& RoadBId, bool bAtBEnd)
+{
+	FOpenDriveRoad* A = Map.FindRoadMutable(RoadAId);
+	FOpenDriveRoad* B = Map.FindRoadMutable(RoadBId);
+	if (!A || !B || A == B)
+	{
+		return false;
+	}
+
+	const EOpenDriveContactPoint ContactOnB = bAtBEnd ? EOpenDriveContactPoint::End : EOpenDriveContactPoint::Start;
+	const EOpenDriveContactPoint ContactOnA = bAtAEnd ? EOpenDriveContactPoint::End : EOpenDriveContactPoint::Start;
+	if (bAtAEnd) { A->SuccessorType = EOpenDriveElementType::Road; A->SuccessorId = RoadBId; A->SuccessorContact = ContactOnB; }
+	else { A->PredecessorType = EOpenDriveElementType::Road; A->PredecessorId = RoadBId; A->PredecessorContact = ContactOnB; }
+	if (bAtBEnd) { B->SuccessorType = EOpenDriveElementType::Road; B->SuccessorId = RoadAId; B->SuccessorContact = ContactOnA; }
+	else { B->PredecessorType = EOpenDriveElementType::Road; B->PredecessorId = RoadAId; B->PredecessorContact = ContactOnA; }
+
+	if (A->LaneSections.Num() > 0 && B->LaneSections.Num() > 0)
+	{
+		FOpenDriveLaneSection& SecA = bAtAEnd ? A->LaneSections.Last() : A->LaneSections[0];
+		FOpenDriveLaneSection& SecB = bAtBEnd ? B->LaneSections.Last() : B->LaneSections[0];
+		InferAndApplyLaneLinks(SecA, bAtAEnd, SecB, bAtBEnd);
+	}
+	return true;
+}
+
+void FOpenDriveModelEdit::ClearRoadLink(FOpenDriveRoad& Road, bool bSuccessor)
+{
+	if (bSuccessor)
+	{
+		Road.SuccessorType = EOpenDriveElementType::None;
+		Road.SuccessorId.Reset();
+		Road.SuccessorContact = EOpenDriveContactPoint::None;
+	}
+	else
+	{
+		Road.PredecessorType = EOpenDriveElementType::None;
+		Road.PredecessorId.Reset();
+		Road.PredecessorContact = EOpenDriveContactPoint::None;
+	}
+}
+
+// ------------------------------------------------------------------------------------------------
+// Junctions
+// ------------------------------------------------------------------------------------------------
+
+FString FOpenDriveModelEdit::AddJunction(FOpenDriveMap& Map, const FString& Name)
+{
+	FOpenDriveJunction Junction;
+	Junction.Id = MakeUniqueJunctionId(Map);
+	Junction.Name = Name;
+	const FString NewId = Junction.Id;
+	Map.GetJunctionsMutable().Add(MoveTemp(Junction));
+	Map.RebuildIndex();
+	return NewId;
+}
+
+bool FOpenDriveModelEdit::RemoveJunction(FOpenDriveMap& Map, const FString& JunctionId)
+{
+	TArray<FOpenDriveJunction>& Junctions = Map.GetJunctionsMutable();
+	const int32 Index = Junctions.IndexOfByPredicate([&](const FOpenDriveJunction& J) { return J.Id == JunctionId; });
+	if (Index == INDEX_NONE)
+	{
+		return false;
+	}
+	Junctions.RemoveAt(Index);
+	for (FOpenDriveRoad& Road : Map.GetRoadsMutable())
+	{
+		if (Road.JunctionId == JunctionId)
+		{
+			Road.JunctionId.Reset();
+		}
+		if (Road.PredecessorType == EOpenDriveElementType::Junction && Road.PredecessorId == JunctionId) { ClearRoadLink(Road, false); }
+		if (Road.SuccessorType == EOpenDriveElementType::Junction && Road.SuccessorId == JunctionId) { ClearRoadLink(Road, true); }
+	}
+	Map.RebuildIndex();
+	return true;
+}
+
+FString FOpenDriveModelEdit::AddJunctionConnection(FOpenDriveMap& Map, const FString& JunctionId, const FString& IncomingRoadId, bool bAtIncomingEnd, const FString& ConnectingRoadId, EOpenDriveContactPoint Contact)
+{
+	FOpenDriveJunction* Junction = nullptr;
+	for (FOpenDriveJunction& J : Map.GetJunctionsMutable())
+	{
+		if (J.Id == JunctionId) { Junction = &J; break; }
+	}
+	FOpenDriveRoad* Incoming = Map.FindRoadMutable(IncomingRoadId);
+	FOpenDriveRoad* Connecting = Map.FindRoadMutable(ConnectingRoadId);
+	if (!Junction || !Incoming || !Connecting || Incoming == Connecting)
+	{
+		return FString();
+	}
+
+	if (bAtIncomingEnd) { Incoming->SuccessorType = EOpenDriveElementType::Junction; Incoming->SuccessorId = JunctionId; Incoming->SuccessorContact = EOpenDriveContactPoint::None; }
+	else { Incoming->PredecessorType = EOpenDriveElementType::Junction; Incoming->PredecessorId = JunctionId; Incoming->PredecessorContact = EOpenDriveContactPoint::None; }
+	Connecting->JunctionId = JunctionId;
+
+	FOpenDriveJunctionConnection Con;
+	int32 MaxId = 0;
+	for (const FOpenDriveJunctionConnection& Existing : Junction->Connections)
+	{
+		if (Existing.Id.IsNumeric()) { MaxId = FMath::Max(MaxId, FCString::Atoi(*Existing.Id)); }
+	}
+	Con.Id = FString::FromInt(MaxId + 1);
+	Con.IncomingRoad = IncomingRoadId;
+	Con.ConnectingRoad = ConnectingRoadId;
+	Con.ContactPoint = Contact;
+
+	if (Incoming->LaneSections.Num() > 0 && Connecting->LaneSections.Num() > 0)
+	{
+		FOpenDriveLaneSection& SecIncoming = bAtIncomingEnd ? Incoming->LaneSections.Last() : Incoming->LaneSections[0];
+		FOpenDriveLaneSection& SecConnecting = (Contact == EOpenDriveContactPoint::End) ? Connecting->LaneSections.Last() : Connecting->LaneSections[0];
+		InferAndApplyLaneLinks(SecIncoming, bAtIncomingEnd, SecConnecting, Contact == EOpenDriveContactPoint::End);
+		for (const FOpenDriveLane& Lane : SecIncoming.Lanes)
+		{
+			const int32 Target = bAtIncomingEnd ? Lane.Successor : Lane.Predecessor;
+			if (Target != 0)
+			{
+				Con.LaneLinks.Emplace(Lane.Id, Target);
+			}
+		}
+	}
+
+	const FString NewConnectionId = Con.Id;
+	Junction->Connections.Add(MoveTemp(Con));
+	return NewConnectionId;
+}
+
+bool FOpenDriveModelEdit::RemoveJunctionConnection(FOpenDriveMap& Map, const FString& JunctionId, const FString& ConnectionId)
+{
+	for (FOpenDriveJunction& J : Map.GetJunctionsMutable())
+	{
+		if (J.Id == JunctionId)
+		{
+			return J.Connections.RemoveAll([&](const FOpenDriveJunctionConnection& C) { return C.Id == ConnectionId; }) > 0;
+		}
+	}
+	return false;
 }
 
 // ------------------------------------------------------------------------------------------------

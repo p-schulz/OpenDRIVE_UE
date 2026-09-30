@@ -274,6 +274,174 @@ void SOpenDriveRoadListTab::Construct(const FArguments& InArgs, FOpenDriveEditor
 							]
 						]
 					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(4.f, 8.f, 4.f, 4.f)
+					[
+						SNew(SExpandableArea)
+						.AreaTitle(LOCTEXT("LinksSection", "Road Links"))
+						.InitiallyCollapsed(true)
+						.BodyContent()
+						[
+							SNew(SVerticalBox)
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f)
+							[
+								SNew(STextBlock).Text(this, &SOpenDriveRoadListTab::GetLinkSummaryText).AutoWrapText(true)
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f)
+							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 4.f, 0.f)[ SNew(STextBlock).Text(LOCTEXT("LinkTarget", "Target Road")) ]
+								+ SHorizontalBox::Slot().FillWidth(1.f)
+								[
+									SNew(SComboButton)
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasSelection)
+									.ButtonContent()[ SNew(STextBlock).Text_Lambda([this]() { return PendingLinkTargetRoad.IsEmpty() ? LOCTEXT("PickRoad", "(pick a road)") : FText::FromString(PendingLinkTargetRoad); }) ]
+									.OnGetMenuContent_Lambda([this]() { return BuildRoadPickerMenu([this](FString Id) { PendingLinkTargetRoad = Id; }); })
+								]
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f)
+							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 4.f, 0.f)[ SNew(STextBlock).Text(LOCTEXT("LinkTargetEnd", "at its End")) ]
+								+ SHorizontalBox::Slot().AutoWidth()
+								[
+									SNew(SCheckBox)
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasSelection)
+									.IsChecked_Lambda([this]() { return bPendingLinkTargetEnd ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+									.OnCheckStateChanged_Lambda([this](ECheckBoxState S) { bPendingLinkTargetEnd = (S == ECheckBoxState::Checked); })
+								]
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 4.f, 0.f, 0.f)
+							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().Padding(0.f, 0.f, 4.f, 0.f)
+								[
+									SNew(SButton).Text(LOCTEXT("SetPred", "Set as My Predecessor"))
+									.ToolTipText(LOCTEXT("SetPredTip", "Connect this road's start to the target road/end, and infer lane links"))
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasSelection).OnClicked(this, &SOpenDriveRoadListTab::OnSetPredecessorClicked)
+								]
+								+ SHorizontalBox::Slot().AutoWidth().Padding(0.f, 0.f, 4.f, 0.f)
+								[
+									SNew(SButton).Text(LOCTEXT("SetSucc", "Set as My Successor"))
+									.ToolTipText(LOCTEXT("SetSuccTip", "Connect this road's end to the target road/end, and infer lane links"))
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasSelection).OnClicked(this, &SOpenDriveRoadListTab::OnSetSuccessorClicked)
+								]
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 4.f, 0.f, 0.f)
+							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().Padding(0.f, 0.f, 4.f, 0.f)
+								[
+									SNew(SButton).Text(LOCTEXT("ClearPred", "Clear Predecessor"))
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasSelection).OnClicked(this, &SOpenDriveRoadListTab::OnClearPredecessorClicked)
+								]
+								+ SHorizontalBox::Slot().AutoWidth()
+								[
+									SNew(SButton).Text(LOCTEXT("ClearSucc", "Clear Successor"))
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasSelection).OnClicked(this, &SOpenDriveRoadListTab::OnClearSuccessorClicked)
+								]
+							]
+						]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(4.f, 8.f, 4.f, 4.f)
+					[
+						SNew(SExpandableArea)
+						.AreaTitle(LOCTEXT("JunctionsSection", "Junctions"))
+						.InitiallyCollapsed(true)
+						.BodyContent()
+						[
+							SNew(SVerticalBox)
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f)
+							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 4.f, 0.f)[ SNew(STextBlock).Text(LOCTEXT("Junction", "Junction")) ]
+								+ SHorizontalBox::Slot().FillWidth(1.f)
+								[
+									SNew(SComboButton)
+									.ButtonContent()[ SNew(STextBlock).Text_Lambda([this]() { return SelectedJunctionId.IsEmpty() ? LOCTEXT("PickJunction", "(pick or add a junction)") : FText::FromString(SelectedJunctionId); }) ]
+									.OnGetMenuContent(this, &SOpenDriveRoadListTab::BuildJunctionMenu)
+								]
+								+ SHorizontalBox::Slot().AutoWidth().Padding(4.f, 0.f, 0.f, 0.f)
+								[
+									SNew(SButton).Text(LOCTEXT("AddJunction", "Add")).OnClicked(this, &SOpenDriveRoadListTab::OnAddJunctionClicked)
+								]
+								+ SHorizontalBox::Slot().AutoWidth().Padding(4.f, 0.f, 0.f, 0.f)
+								[
+									SNew(SButton).Text(LOCTEXT("RemoveJunction", "Remove"))
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasJunctionSelection).OnClicked(this, &SOpenDriveRoadListTab::OnRemoveJunctionClicked)
+								]
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 4.f, 0.f, 2.f)
+							[
+								SNew(STextBlock).Text(this, &SOpenDriveRoadListTab::GetJunctionSummaryText).AutoWrapText(true)
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 2.f)
+							[
+								SNew(STextBlock).Text(LOCTEXT("AddConnectionTitle", "Add connection:")).Font(FAppStyle::GetFontStyle("BoldFont"))
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f)
+							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 4.f, 0.f)[ SNew(STextBlock).Text(LOCTEXT("Incoming", "Incoming Road")) ]
+								+ SHorizontalBox::Slot().FillWidth(1.f)
+								[
+									SNew(SComboButton)
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasJunctionSelection)
+									.ButtonContent()[ SNew(STextBlock).Text_Lambda([this]() { return PendingIncomingRoad.IsEmpty() ? LOCTEXT("PickRoad", "(pick a road)") : FText::FromString(PendingIncomingRoad); }) ]
+									.OnGetMenuContent_Lambda([this]() { return BuildRoadPickerMenu([this](FString Id) { PendingIncomingRoad = Id; }); })
+								]
+								+ SHorizontalBox::Slot().AutoWidth().Padding(4.f, 0.f, 0.f, 0.f)[ SNew(STextBlock).Text(LOCTEXT("AtEnd", "at its End")) ]
+								+ SHorizontalBox::Slot().AutoWidth()
+								[
+									SNew(SCheckBox)
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasJunctionSelection)
+									.IsChecked_Lambda([this]() { return bPendingIncomingEnd ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+									.OnCheckStateChanged_Lambda([this](ECheckBoxState S) { bPendingIncomingEnd = (S == ECheckBoxState::Checked); })
+								]
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f)
+							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 4.f, 0.f)[ SNew(STextBlock).Text(LOCTEXT("Connecting", "Connecting Road")) ]
+								+ SHorizontalBox::Slot().FillWidth(1.f)
+								[
+									SNew(SComboButton)
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasJunctionSelection)
+									.ButtonContent()[ SNew(STextBlock).Text_Lambda([this]() { return PendingConnectingRoad.IsEmpty() ? LOCTEXT("PickRoad", "(pick a road)") : FText::FromString(PendingConnectingRoad); }) ]
+									.OnGetMenuContent_Lambda([this]() { return BuildRoadPickerMenu([this](FString Id) { PendingConnectingRoad = Id; }); })
+								]
+								+ SHorizontalBox::Slot().AutoWidth().Padding(4.f, 0.f, 0.f, 0.f)[ SNew(STextBlock).Text(LOCTEXT("EnteredAtEnd", "entered at its End")) ]
+								+ SHorizontalBox::Slot().AutoWidth()
+								[
+									SNew(SCheckBox)
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasJunctionSelection)
+									.IsChecked_Lambda([this]() { return bPendingConnectingEnd ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+									.OnCheckStateChanged_Lambda([this](ECheckBoxState S) { bPendingConnectingEnd = (S == ECheckBoxState::Checked); })
+								]
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 4.f, 0.f, 0.f)
+							[
+								SNew(SButton).Text(LOCTEXT("AddConnection", "Add Connection"))
+								.IsEnabled(this, &SOpenDriveRoadListTab::HasJunctionSelection).OnClicked(this, &SOpenDriveRoadListTab::OnAddConnectionClicked)
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 2.f)
+							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 4.f, 0.f)[ SNew(STextBlock).Text(LOCTEXT("Connection", "Connection")) ]
+								+ SHorizontalBox::Slot().FillWidth(1.f)
+								[
+									SNew(SComboButton)
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasJunctionSelection)
+									.ButtonContent()[ SNew(STextBlock).Text_Lambda([this]() { return SelectedConnectionId.IsEmpty() ? LOCTEXT("PickConnection", "(pick a connection)") : FText::FromString(SelectedConnectionId); }) ]
+									.OnGetMenuContent(this, &SOpenDriveRoadListTab::BuildConnectionMenu)
+								]
+								+ SHorizontalBox::Slot().AutoWidth().Padding(4.f, 0.f, 0.f, 0.f)
+								[
+									SNew(SButton).Text(LOCTEXT("RemoveConnection", "Remove"))
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasJunctionSelection).OnClicked(this, &SOpenDriveRoadListTab::OnRemoveConnectionClicked)
+								]
+							]
+						]
+					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(4.f)
 					[
 						SNew(STextBlock).Text(this, &SOpenDriveRoadListTab::GetInfoText).AutoWrapText(true)
@@ -613,6 +781,196 @@ FReply SOpenDriveRoadListTab::OnApplyRoadMarkClicked()
 		Context->NotifyValueChanged();
 	}
 	return FReply::Handled();
+}
+
+TSharedRef<SWidget> SOpenDriveRoadListTab::BuildRoadPickerMenu(TFunction<void(FString)> OnPicked) const
+{
+	FMenuBuilder Menu(true, nullptr);
+	if (Context)
+	{
+		for (const FOpenDriveRoad& Road : Context->GetWorking().GetRoads())
+		{
+			if (Road.Id == Context->GetSelectedRoadId())
+			{
+				continue;
+			}
+			const FString Id = Road.Id;
+			Menu.AddMenuEntry(FText::FromString(FString::Printf(TEXT("%s: %s"), *Road.Id, Road.Name.IsEmpty() ? TEXT("(unnamed)") : *Road.Name)), FText(), FSlateIcon(),
+				FUIAction(FExecuteAction::CreateLambda([OnPicked, Id]() { OnPicked(Id); })));
+		}
+	}
+	return Menu.MakeWidget();
+}
+
+FText SOpenDriveRoadListTab::GetLinkSummaryText() const
+{
+	const FOpenDriveRoad* Road = Context ? Context->GetSelectedRoad() : nullptr;
+	if (!Road)
+	{
+		return FText::GetEmpty();
+	}
+	auto Describe = [](EOpenDriveElementType Type, const FString& Id, EOpenDriveContactPoint Contact)
+	{
+		if (Type == EOpenDriveElementType::None || Id.IsEmpty())
+		{
+			return FString(TEXT("none"));
+		}
+		const TCHAR* TypeStr = Type == EOpenDriveElementType::Junction ? TEXT("junction") : TEXT("road");
+		const TCHAR* ContactStr = Contact == EOpenDriveContactPoint::End ? TEXT(" (end)") : Contact == EOpenDriveContactPoint::Start ? TEXT(" (start)") : TEXT("");
+		return FString::Printf(TEXT("%s %s%s"), TypeStr, *Id, ContactStr);
+	};
+	return FText::FromString(FString::Printf(TEXT("Predecessor: %s\nSuccessor: %s"),
+		*Describe(Road->PredecessorType, Road->PredecessorId, Road->PredecessorContact),
+		*Describe(Road->SuccessorType, Road->SuccessorId, Road->SuccessorContact)));
+}
+
+FReply SOpenDriveRoadListTab::OnSetPredecessorClicked()
+{
+	if (Context && HasSelection() && !PendingLinkTargetRoad.IsEmpty())
+	{
+		FOpenDriveModelEdit::ConnectRoadEnds(Context->GetWorking(), Context->GetSelectedRoadId(), false, PendingLinkTargetRoad, bPendingLinkTargetEnd);
+		Context->NotifyStructureChanged();
+	}
+	return FReply::Handled();
+}
+
+FReply SOpenDriveRoadListTab::OnSetSuccessorClicked()
+{
+	if (Context && HasSelection() && !PendingLinkTargetRoad.IsEmpty())
+	{
+		FOpenDriveModelEdit::ConnectRoadEnds(Context->GetWorking(), Context->GetSelectedRoadId(), true, PendingLinkTargetRoad, bPendingLinkTargetEnd);
+		Context->NotifyStructureChanged();
+	}
+	return FReply::Handled();
+}
+
+FReply SOpenDriveRoadListTab::OnClearPredecessorClicked()
+{
+	if (Context && Context->GetSelectedRoadMutable())
+	{
+		FOpenDriveModelEdit::ClearRoadLink(*Context->GetSelectedRoadMutable(), false);
+		Context->NotifyStructureChanged();
+	}
+	return FReply::Handled();
+}
+
+FReply SOpenDriveRoadListTab::OnClearSuccessorClicked()
+{
+	if (Context && Context->GetSelectedRoadMutable())
+	{
+		FOpenDriveModelEdit::ClearRoadLink(*Context->GetSelectedRoadMutable(), true);
+		Context->NotifyStructureChanged();
+	}
+	return FReply::Handled();
+}
+
+TSharedRef<SWidget> SOpenDriveRoadListTab::BuildJunctionMenu()
+{
+	FMenuBuilder Menu(true, nullptr);
+	if (Context)
+	{
+		for (const FOpenDriveJunction& Junction : Context->GetWorking().GetJunctions())
+		{
+			const FString Id = Junction.Id;
+			Menu.AddMenuEntry(FText::FromString(FString::Printf(TEXT("%s: %s"), *Junction.Id, Junction.Name.IsEmpty() ? TEXT("(unnamed)") : *Junction.Name)), FText(), FSlateIcon(),
+				FUIAction(FExecuteAction::CreateSP(this, &SOpenDriveRoadListTab::OnJunctionPicked, Id)));
+		}
+	}
+	return Menu.MakeWidget();
+}
+
+void SOpenDriveRoadListTab::OnJunctionPicked(FString JunctionId)
+{
+	SelectedJunctionId = JunctionId;
+	SelectedConnectionId.Reset();
+}
+
+bool SOpenDriveRoadListTab::HasJunctionSelection() const
+{
+	return Context && Context->GetWorking().FindJunction(SelectedJunctionId) != nullptr;
+}
+
+FReply SOpenDriveRoadListTab::OnAddJunctionClicked()
+{
+	if (Context)
+	{
+		SelectedJunctionId = FOpenDriveModelEdit::AddJunction(Context->GetWorking(), TEXT("Junction"));
+		Context->NotifyStructureChanged();
+	}
+	return FReply::Handled();
+}
+
+FReply SOpenDriveRoadListTab::OnRemoveJunctionClicked()
+{
+	if (Context && HasJunctionSelection())
+	{
+		FOpenDriveModelEdit::RemoveJunction(Context->GetWorking(), SelectedJunctionId);
+		SelectedJunctionId.Reset();
+		SelectedConnectionId.Reset();
+		Context->NotifyStructureChanged();
+	}
+	return FReply::Handled();
+}
+
+TSharedRef<SWidget> SOpenDriveRoadListTab::BuildConnectionMenu()
+{
+	FMenuBuilder Menu(true, nullptr);
+	if (Context)
+	{
+		if (const FOpenDriveJunction* Junction = Context->GetWorking().FindJunction(SelectedJunctionId))
+		{
+			for (const FOpenDriveJunctionConnection& Con : Junction->Connections)
+			{
+				const FString Id = Con.Id;
+				Menu.AddMenuEntry(FText::FromString(FString::Printf(TEXT("%s: %s -> %s"), *Con.Id, *Con.IncomingRoad, *Con.ConnectingRoad)), FText(), FSlateIcon(),
+					FUIAction(FExecuteAction::CreateSP(this, &SOpenDriveRoadListTab::OnConnectionPicked, Id)));
+			}
+		}
+	}
+	return Menu.MakeWidget();
+}
+
+void SOpenDriveRoadListTab::OnConnectionPicked(FString ConnectionId)
+{
+	SelectedConnectionId = ConnectionId;
+}
+
+FReply SOpenDriveRoadListTab::OnAddConnectionClicked()
+{
+	if (Context && HasJunctionSelection() && !PendingIncomingRoad.IsEmpty() && !PendingConnectingRoad.IsEmpty())
+	{
+		const EOpenDriveContactPoint Contact = bPendingConnectingEnd ? EOpenDriveContactPoint::End : EOpenDriveContactPoint::Start;
+		FOpenDriveModelEdit::AddJunctionConnection(Context->GetWorking(), SelectedJunctionId, PendingIncomingRoad, bPendingIncomingEnd, PendingConnectingRoad, Contact);
+		Context->NotifyStructureChanged();
+	}
+	return FReply::Handled();
+}
+
+FReply SOpenDriveRoadListTab::OnRemoveConnectionClicked()
+{
+	if (Context && HasJunctionSelection() && !SelectedConnectionId.IsEmpty())
+	{
+		FOpenDriveModelEdit::RemoveJunctionConnection(Context->GetWorking(), SelectedJunctionId, SelectedConnectionId);
+		SelectedConnectionId.Reset();
+		Context->NotifyStructureChanged();
+	}
+	return FReply::Handled();
+}
+
+FText SOpenDriveRoadListTab::GetJunctionSummaryText() const
+{
+	const FOpenDriveJunction* Junction = Context ? Context->GetWorking().FindJunction(SelectedJunctionId) : nullptr;
+	if (!Junction)
+	{
+		return LOCTEXT("NoJunction", "Pick or add a junction to edit its connections.");
+	}
+	FString Text = FString::Printf(TEXT("%d connection(s):"), Junction->Connections.Num());
+	for (const FOpenDriveJunctionConnection& Con : Junction->Connections)
+	{
+		Text += FString::Printf(TEXT("\n  %s: %s -> %s (%s, %d lane link(s))"), *Con.Id, *Con.IncomingRoad, *Con.ConnectingRoad,
+			Con.ContactPoint == EOpenDriveContactPoint::End ? TEXT("end") : TEXT("start"), Con.LaneLinks.Num());
+	}
+	return FText::FromString(Text);
 }
 
 FText SOpenDriveRoadListTab::GetInfoText() const

@@ -331,6 +331,44 @@ int main()
 			FOpenDriveModelEdit::SetRoadType(EditMap, *Road1, EOpenDriveRoadType::Rural, TEXT("DE"));
 			Check(Road1->Types.Num() == 1 && Road1->Types[0].Type == EOpenDriveRoadType::Rural && Road1->Types[0].Country == FString("DE"), "SetRoadType");
 
+			// --- Lane material/access/rule/height (data model + writer round trip) --------------------
+			if (FOpenDriveLane* Lane1 = Road1->LaneSections[0].FindLaneMutable(1))
+			{
+				Lane1->Materials.Add(FOpenDriveLaneMaterialEntry{ 0.0, 0.8, 0.02, TEXT("asphalt") });
+				Lane1->Access.Add(FOpenDriveLaneAccessEntry{ 0.0, false, TEXT("bicycle") });
+				Lane1->Rules.Add(FOpenDriveLaneRuleEntry{ 0.0, TEXT("no overtaking") });
+				Lane1->Heights.Add(FOpenDriveLaneHeightEntry{ 0.0, 0.0, 0.15 });
+			}
+			{
+				const FString LaneFieldsXml = FOpenDriveWriter::Write(EditMap);
+				Check(LaneFieldsXml.S.find("material") != std::string::npos, "writer emits lane material");
+				Check(LaneFieldsXml.S.find("asphalt") != std::string::npos, "writer emits material surface");
+				Check(LaneFieldsXml.S.find("<access") != std::string::npos, "writer emits lane access");
+				Check(LaneFieldsXml.S.find("no overtaking") != std::string::npos, "writer emits lane rule");
+				Check(LaneFieldsXml.S.find("<height") != std::string::npos, "writer emits lane height");
+
+				FOpenDriveMap LaneFieldsReparsed;
+				FString LaneFieldsErr;
+				Check(LaneFieldsReparsed.LoadFromString(LaneFieldsXml, LaneFieldsErr), "reparse lane fields xml");
+				if (const FOpenDriveLane* Reparsed1 = LaneFieldsReparsed.FindRoad(FString("1"))
+					? LaneFieldsReparsed.FindRoad(FString("1"))->LaneSections[0].FindLane(1) : nullptr)
+				{
+					Check(Reparsed1->Materials.Num() == 1 && Reparsed1->Materials[0].Surface == FString("asphalt"), "round trip: material surface");
+					CheckNear(Reparsed1->Materials.Num() == 1 ? Reparsed1->Materials[0].Friction : -1.0, 0.8, 1e-9, "round trip: material friction");
+					Check(Reparsed1->Access.Num() == 1 && !Reparsed1->Access[0].bAllow && Reparsed1->Access[0].Restriction == FString("bicycle"), "round trip: access deny bicycle");
+					Check(Reparsed1->Rules.Num() == 1 && Reparsed1->Rules[0].Value == FString("no overtaking"), "round trip: rule value");
+					Check(Reparsed1->Heights.Num() == 1, "round trip: height entry present");
+					if (Reparsed1->Heights.Num() == 1)
+					{
+						CheckNear(Reparsed1->Heights[0].OuterHeight, 0.15, 1e-9, "round trip: height outer");
+					}
+				}
+				else
+				{
+					Check(false, "round trip: find lane 1 for lane-field checks");
+				}
+			}
+
 			FOpenDriveRoadMarkEntry NewMark;
 			NewMark.Type = EOpenDriveRoadMarkType::BottsDots;
 			NewMark.Color = EOpenDriveRoadMarkColor::Blue;
@@ -344,6 +382,84 @@ int main()
 		{
 			Check(false, "find road 1 for lane edits");
 		}
+	}
+
+	// --- Road links & junction authoring -----------------------------------------------------------
+	{
+		FOpenDriveMap LinkMap;
+		const FString RoadA = FOpenDriveModelEdit::AddStraightRoad(LinkMap, TEXT("A"), 0.0, 0.0, 0.0, 50.0);
+		const FString RoadB = FOpenDriveModelEdit::AddStraightRoad(LinkMap, TEXT("B"), 50.0, 0.0, 0.0, 50.0);
+		const FString RoadC = FOpenDriveModelEdit::AddStraightRoad(LinkMap, TEXT("C"), 100.0, 0.0, 0.0, 50.0);
+		Check(RoadA == FString("1") && RoadB == FString("2") && RoadC == FString("3"), "link test: expected road ids");
+
+		// Straight continuation: A's end -> B's start.
+		Check(FOpenDriveModelEdit::ConnectRoadEnds(LinkMap, RoadA, true, RoadB, false), "ConnectRoadEnds A-end to B-start");
+		FOpenDriveRoad* A = LinkMap.FindRoadMutable(RoadA);
+		FOpenDriveRoad* B = LinkMap.FindRoadMutable(RoadB);
+		Check(A && A->SuccessorType == EOpenDriveElementType::Road && A->SuccessorId == RoadB && A->SuccessorContact == EOpenDriveContactPoint::Start, "A.Successor set");
+		Check(B && B->PredecessorType == EOpenDriveElementType::Road && B->PredecessorId == RoadA && B->PredecessorContact == EOpenDriveContactPoint::End, "B.Predecessor set");
+		if (A && B)
+		{
+			Check(A->LaneSections.Last().FindLane(1)->Successor == 1, "A lane 1 -> B lane 1 (no flip)");
+			Check(A->LaneSections.Last().FindLane(-1)->Successor == -1, "A lane -1 -> B lane -1 (no flip)");
+			Check(B->LaneSections[0].FindLane(1)->Predecessor == 1, "B lane 1 <- A lane 1");
+		}
+
+		TArray<FOpenDriveSuccessor> Succ;
+		LinkMap.GetSuccessors(*A, true, Succ);
+		Check(Succ.Num() == 1 && Succ[0].RoadId == RoadB && Succ[0].bForward, "GetSuccessors resolves the authored A->B link");
+		if (Succ.Num() == 1)
+		{
+			const int32* Mapped = Succ[0].LaneMap.Find(1);
+			Check(Mapped && *Mapped == 1, "GetSuccessors lane map A.1 -> B.1");
+		}
+
+		TArray<FOpenDriveRouteStep> Route;
+		Check(LinkMap.FindRoute(RoadA, true, RoadB, Route) && Route.Num() == 2, "FindRoute across the authored link");
+
+		// Reversed continuation: B's end -> C's end (C entered backwards, so lane ids flip).
+		Check(FOpenDriveModelEdit::ConnectRoadEnds(LinkMap, RoadB, true, RoadC, true), "ConnectRoadEnds B-end to C-end");
+		FOpenDriveRoad* C = LinkMap.FindRoadMutable(RoadC);
+		if (B && C)
+		{
+			Check(B->LaneSections.Last().FindLane(1)->Successor == -1, "B lane 1 -> C lane -1 (flipped)");
+			Check(C->LaneSections.Last().FindLane(-1)->Successor == 1, "C lane -1 -> B lane 1 (flipped, back reference)");
+		}
+
+		FOpenDriveModelEdit::ClearRoadLink(*A, true);
+		Check(A->SuccessorType == EOpenDriveElementType::None && A->SuccessorId.IsEmpty(), "ClearRoadLink clears successor");
+
+		// Junction authoring.
+		const FString RoadD = FOpenDriveModelEdit::AddStraightRoad(LinkMap, TEXT("D"), 200.0, 0.0, 0.0, 30.0);
+		const FString RoadE = FOpenDriveModelEdit::AddStraightRoad(LinkMap, TEXT("E"), 230.0, 0.0, 0.0, 30.0);
+		const FString JunctionId = FOpenDriveModelEdit::AddJunction(LinkMap, TEXT("TestJunction"));
+		Check(!JunctionId.IsEmpty() && LinkMap.FindJunction(JunctionId) != nullptr, "AddJunction");
+
+		const FString ConId = FOpenDriveModelEdit::AddJunctionConnection(LinkMap, JunctionId, RoadD, true, RoadE, EOpenDriveContactPoint::Start);
+		Check(!ConId.IsEmpty(), "AddJunctionConnection returns an id");
+		const FOpenDriveJunction* Junction = LinkMap.FindJunction(JunctionId);
+		Check(Junction && Junction->Connections.Num() == 1, "junction has one connection");
+		if (Junction && Junction->Connections.Num() == 1)
+		{
+			const FOpenDriveJunctionConnection& Con = Junction->Connections[0];
+			Check(Con.IncomingRoad == RoadD && Con.ConnectingRoad == RoadE && Con.ContactPoint == EOpenDriveContactPoint::Start, "connection fields");
+			Check(Con.LaneLinks.Num() == 2, "connection has 2 lane links (id 1 and -1, no flip)");
+		}
+		const FOpenDriveRoad* D = LinkMap.FindRoad(RoadD);
+		const FOpenDriveRoad* E = LinkMap.FindRoad(RoadE);
+		Check(D && D->SuccessorType == EOpenDriveElementType::Junction && D->SuccessorId == JunctionId, "incoming road's successor is the junction");
+		Check(E && E->JunctionId == JunctionId, "connecting road is marked as belonging to the junction");
+
+		TArray<FOpenDriveSuccessor> JuncSucc;
+		LinkMap.GetSuccessors(*D, true, JuncSucc);
+		Check(JuncSucc.Num() == 1 && JuncSucc[0].RoadId == RoadE, "GetSuccessors resolves through the authored junction");
+
+		Check(FOpenDriveModelEdit::RemoveJunctionConnection(LinkMap, JunctionId, ConId), "RemoveJunctionConnection");
+		Check(LinkMap.FindJunction(JunctionId)->Connections.Num() == 0, "connection removed");
+		Check(FOpenDriveModelEdit::RemoveJunction(LinkMap, JunctionId), "RemoveJunction");
+		Check(LinkMap.FindJunction(JunctionId) == nullptr, "junction removed");
+		Check(LinkMap.FindRoad(RoadE)->JunctionId.IsEmpty(), "RemoveJunction clears connecting road's JunctionId");
+		Check(LinkMap.FindRoad(RoadD)->SuccessorType == EOpenDriveElementType::None, "RemoveJunction clears incoming road's link to it");
 	}
 
 	// --- Profile <-> points round trip -----------------------------------------------------------

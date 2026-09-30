@@ -203,9 +203,28 @@ FString FOpenDriveWriter::Write(const FOpenDriveMap& Map)
 							*D(RM.S - Sec.S), *OpenDriveRoadMarkTypeToString(RM.Type), RM.Weight == EOpenDriveRoadMarkWeight::Bold ? TEXT("bold") : TEXT("standard"),
 							*OpenDriveRoadMarkColorToString(RM.Color), *WidthAttr, *OpenDriveLaneChangeToString(RM.LaneChange), *HeightAttr);
 					}
+					for (const FOpenDriveLaneMaterialEntry& Mat : L.Materials)
+					{
+						const FString SurfaceAttr = Mat.Surface.IsEmpty() ? FString() : FString::Printf(TEXT(" surface=\"%s\""), *Esc(Mat.Surface));
+						Out += FString::Printf(TEXT("\t\t\t\t\t\t<material sOffset=\"%s\" friction=\"%s\" roughness=\"%s\"%s/>\n"),
+							*D(Mat.S - Sec.S), *D(Mat.Friction), *D(Mat.Roughness), *SurfaceAttr);
+					}
 					for (const FOpenDriveSpeedLimit& Limit : L.SpeedLimits)
 					{
 						Out += FString::Printf(TEXT("\t\t\t\t\t\t<speed sOffset=\"%s\" max=\"%s\" unit=\"m/s\"/>\n"), *D(Limit.S - Sec.S), *D(Limit.MaxSpeed));
+					}
+					for (const FOpenDriveLaneAccessEntry& Acc : L.Access)
+					{
+						const FString RestrictionAttr = Acc.Restriction.IsEmpty() ? FString() : FString::Printf(TEXT(" restriction=\"%s\""), *Esc(Acc.Restriction));
+						Out += FString::Printf(TEXT("\t\t\t\t\t\t<access sOffset=\"%s\" rule=\"%s\"%s/>\n"), *D(Acc.S - Sec.S), Acc.bAllow ? TEXT("allow") : TEXT("deny"), *RestrictionAttr);
+					}
+					for (const FOpenDriveLaneRuleEntry& Rule : L.Rules)
+					{
+						Out += FString::Printf(TEXT("\t\t\t\t\t\t<rule sOffset=\"%s\" value=\"%s\"/>\n"), *D(Rule.S - Sec.S), *Esc(Rule.Value));
+					}
+					for (const FOpenDriveLaneHeightEntry& Ht : L.Heights)
+					{
+						Out += FString::Printf(TEXT("\t\t\t\t\t\t<height sOffset=\"%s\" inner=\"%s\" outer=\"%s\"/>\n"), *D(Ht.S - Sec.S), *D(Ht.InnerHeight), *D(Ht.OuterHeight));
 					}
 					Out += TEXT("\t\t\t\t\t</lane>\n");
 				}

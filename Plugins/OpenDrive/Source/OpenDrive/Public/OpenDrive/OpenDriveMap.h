@@ -187,6 +187,40 @@ struct OPENDRIVE_API FOpenDriveRoadMarkEntry
 	double Height = 0.0;
 };
 
+/** <lane><material>: surface friction/roughness/texture, valid from S (absolute road s) on. */
+struct OPENDRIVE_API FOpenDriveLaneMaterialEntry
+{
+	double S = 0.0;
+	double Friction = 1.0;
+	double Roughness = 0.0;
+	FString Surface;
+};
+
+/** <lane><access>: allows or denies a vehicle category, valid from S (absolute road s) on. Restriction is
+ *  the ASAM vehicle category string (e.g. "bicycle", "pedestrian", "bus"); empty means all categories. */
+struct OPENDRIVE_API FOpenDriveLaneAccessEntry
+{
+	double S = 0.0;
+	bool bAllow = true;
+	FString Restriction;
+};
+
+/** <lane><rule>: a free-text traffic rule annotation (e.g. "no overtaking"), valid from S on. */
+struct OPENDRIVE_API FOpenDriveLaneRuleEntry
+{
+	double S = 0.0;
+	FString Value;
+};
+
+/** <lane><height>: raises the lane's rendered surface above the road's elevation profile (e.g. for a
+ *  curb or sidewalk), valid from S (absolute road s) on. */
+struct OPENDRIVE_API FOpenDriveLaneHeightEntry
+{
+	double S = 0.0;
+	double InnerHeight = 0.0;
+	double OuterHeight = 0.0;
+};
+
 struct OPENDRIVE_API FOpenDriveLane
 {
 	int32 Id = 0;
@@ -200,6 +234,10 @@ struct OPENDRIVE_API FOpenDriveLane
 	TArray<FOpenDriveSpeedLimit> SpeedLimits;
 	/** Absolute-s road mark entries (sOffset already added to the lane section start). */
 	TArray<FOpenDriveRoadMarkEntry> RoadMarks;
+	TArray<FOpenDriveLaneMaterialEntry> Materials;
+	TArray<FOpenDriveLaneAccessEntry> Access;
+	TArray<FOpenDriveLaneRuleEntry> Rules;
+	TArray<FOpenDriveLaneHeightEntry> Heights;
 
 	const FOpenDriveRoadMarkEntry* FindRoadMarkAt(double AbsS) const
 	{
@@ -229,12 +267,24 @@ struct OPENDRIVE_API FOpenDriveLaneSection
 {
 	double S = 0.0;
 	double EndS = 0.0;
-	/** Left lanes (id > 0) and right lanes (id < 0), sorted by ascending id. */
+	/** Left lanes (id > 0), the centre lane (id 0) and right lanes (id < 0), sorted by ascending id. */
 	TArray<FOpenDriveLane> Lanes;
 
 	const FOpenDriveLane* FindLane(int32 Id) const
 	{
 		for (const FOpenDriveLane& L : Lanes)
+		{
+			if (L.Id == Id)
+			{
+				return &L;
+			}
+		}
+		return nullptr;
+	}
+
+	FOpenDriveLane* FindLaneMutable(int32 Id)
+	{
+		for (FOpenDriveLane& L : Lanes)
 		{
 			if (L.Id == Id)
 			{
