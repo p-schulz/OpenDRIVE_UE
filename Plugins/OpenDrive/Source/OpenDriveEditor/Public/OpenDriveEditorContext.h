@@ -14,7 +14,7 @@ class UOpenDriveEditorSettings;
  * to the asset (regenerating its XML, undoable), Revert discards it. Mirrors OpenScenario_UE's
  * FOpenScenarioEditorContext so both plugins' editor modes behave consistently.
  */
-class FOpenDriveEditorContext
+class OPENDRIVEEDITOR_API FOpenDriveEditorContext
 {
 public:
 	FOpenDriveEditorContext();
