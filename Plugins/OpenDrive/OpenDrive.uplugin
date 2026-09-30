@@ -1,0 +1,30 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "OpenDRIVE",
+	"Description": "Import, create and edit ASAM OpenDRIVE (XODR) road networks, with a dedicated editor tool mode for road, elevation and superelevation editing.",
+	"Category": "Simulation",
+	"CreatedBy": "OpenDRIVE_UE",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"EngineVersion": "5.6.0",
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "OpenDrive",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "OpenDriveEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}
