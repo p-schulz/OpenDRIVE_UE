@@ -173,8 +173,8 @@ FString FOpenDriveWriter::Write(const FOpenDriveMap& Map)
 				else if (L.Id < 0) { Right.Add(&L); }
 				else { Center = &L; }
 			}
-			Left.Sort([](const FOpenDriveLane* A, const FOpenDriveLane* B) { return A->Id > B->Id; });
-			Right.Sort([](const FOpenDriveLane* A, const FOpenDriveLane* B) { return A->Id > B->Id; });
+			Left.Sort([](const FOpenDriveLane& A, const FOpenDriveLane& B) { return A.Id > B.Id; });
+			Right.Sort([](const FOpenDriveLane& A, const FOpenDriveLane& B) { return A.Id > B.Id; });
 
 			auto WriteSide = [&Out, &Sec](const TCHAR* SideTag, const TArray<const FOpenDriveLane*>& LaneList)
 			{
