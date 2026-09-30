@@ -10,12 +10,14 @@ class SOpenDriveProfileGraph;
 enum class EOpenDriveProfileKind : uint8
 {
 	Elevation,
-	Superelevation
+	Superelevation,
+	LaneOffset,
+	Crossfall
 };
 
 /**
- * Dockable tab: picks up the road selected in the Road List tab and edits its elevation or
- * superelevation profile as a 2D graph (see SOpenDriveProfileGraph).
+ * Dockable tab: picks up the road selected in the Road List tab and edits one of its s-keyed profiles
+ * (elevation, superelevation, lane offset or crossfall) as a 2D graph (see SOpenDriveProfileGraph).
  */
 class SOpenDriveProfileTab : public SCompoundWidget
 {

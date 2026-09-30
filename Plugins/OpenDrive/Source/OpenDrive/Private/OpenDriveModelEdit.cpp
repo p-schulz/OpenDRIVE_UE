@@ -165,6 +165,81 @@ void FOpenDriveModelEdit::SetLaneOffsetProfile(FOpenDriveMap& Map, FOpenDriveRoa
 	Map.ComputeRoadBounds(Road);
 }
 
+void FOpenDriveModelEdit::SetCrossfallProfile(FOpenDriveMap& Map, FOpenDriveRoad& Road, TArray<FOpenDriveCubic> NewProfile)
+{
+	Road.Crossfall.Reset();
+	Road.Crossfall.Reserve(NewProfile.Num());
+	for (FOpenDriveCubic& Cubic : NewProfile)
+	{
+		FOpenDriveCrossfallEntry Entry;
+		Entry.Side = EOpenDriveCrossfallSide::Both;
+		Entry.Cubic = MoveTemp(Cubic);
+		Road.Crossfall.Add(MoveTemp(Entry));
+	}
+	Map.ComputeRoadBounds(Road);
+}
+
+TArray<FOpenDriveCubic> FOpenDriveModelEdit::ExtractCrossfallCubics(const TArray<FOpenDriveCrossfallEntry>& Crossfall)
+{
+	TArray<FOpenDriveCubic> Out;
+	Out.Reserve(Crossfall.Num());
+	for (const FOpenDriveCrossfallEntry& Entry : Crossfall)
+	{
+		if (Entry.Side == EOpenDriveCrossfallSide::Both)
+		{
+			Out.Add(Entry.Cubic);
+		}
+	}
+	if (Out.Num() == 0)
+	{
+		// No symmetric entries (only left/right-only data): expose the average as a flat starting point.
+		for (const FOpenDriveCrossfallEntry& Entry : Crossfall)
+		{
+			Out.Add(Entry.Cubic);
+		}
+	}
+	return Out;
+}
+
+void FOpenDriveModelEdit::SetSymmetricCrownShape(FOpenDriveMap& Map, FOpenDriveRoad& Road, double CrownHeight, double HalfWidth)
+{
+	Road.Shape.Reset();
+	HalfWidth = FMath::Max(0.1, HalfWidth);
+
+	// Rising from 0 at t=-HalfWidth to CrownHeight at t=0, falling back to 0 at t=+HalfWidth, flat beyond.
+	FOpenDriveShapeEntry Left;
+	Left.S = 0.0;
+	Left.T = -HalfWidth;
+	Left.A = 0.0;
+	Left.B = CrownHeight / HalfWidth;
+	Road.Shape.Add(Left);
+
+	FOpenDriveShapeEntry Right;
+	Right.S = 0.0;
+	Right.T = 0.0;
+	Right.A = CrownHeight;
+	Right.B = -CrownHeight / HalfWidth;
+	Road.Shape.Add(Right);
+
+	FOpenDriveShapeEntry Cap;
+	Cap.S = 0.0;
+	Cap.T = HalfWidth;
+	Cap.A = 0.0;
+	Road.Shape.Add(Cap);
+
+	Map.ComputeRoadBounds(Road);
+}
+
+void FOpenDriveModelEdit::SetRoadType(FOpenDriveMap& Map, FOpenDriveRoad& Road, EOpenDriveRoadType Type, const FString& Country)
+{
+	Road.Types.Reset();
+	FOpenDriveRoadTypeEntry Entry;
+	Entry.S = 0.0;
+	Entry.Type = Type;
+	Entry.Country = Country;
+	Road.Types.Add(MoveTemp(Entry));
+}
+
 bool FOpenDriveModelEdit::SetLaneWidthConstant(FOpenDriveRoad& Road, int32 LaneId, double Width)
 {
 	bool bFound = false;

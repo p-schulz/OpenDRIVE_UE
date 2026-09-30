@@ -39,6 +39,23 @@ public:
 	static void SetElevationProfile(FOpenDriveMap& Map, FOpenDriveRoad& Road, TArray<FOpenDriveCubic> NewProfile);
 	static void SetSuperelevationProfile(FOpenDriveMap& Map, FOpenDriveRoad& Road, TArray<FOpenDriveCubic> NewProfile);
 	static void SetLaneOffsetProfile(FOpenDriveMap& Map, FOpenDriveRoad& Road, TArray<FOpenDriveCubic> NewProfile);
+	/** Replaces the crossfall profile with a single-sided-Both profile built from NewProfile (radians). Any
+	 *  existing asymmetric (left/right only) crossfall data is discarded -- see FOpenDriveCrossfallEntry. */
+	static void SetCrossfallProfile(FOpenDriveMap& Map, FOpenDriveRoad& Road, TArray<FOpenDriveCubic> NewProfile);
+	/** Best-effort flattening of Road.Crossfall to a single per-s value (for display only) -- picks the "Both"
+	 *  entry where present, otherwise averages Left/Right. Use SetCrossfallProfile to write it back. */
+	static TArray<FOpenDriveCubic> ExtractCrossfallCubics(const TArray<FOpenDriveCrossfallEntry>& Crossfall);
+
+	/**
+	 * Replaces the lateral profile "shape" (road carving) with a simple symmetric crown: CrownHeight (metres,
+	 * can be negative for a gutter) at the road centre, falling linearly to 0 at +/-HalfWidth, flat beyond.
+	 * This is a deliberately simplified authoring path over the fully general (s,t) shape table -- imported
+	 * files with a real per-side shape are preserved until this is called.
+	 */
+	static void SetSymmetricCrownShape(FOpenDriveMap& Map, FOpenDriveRoad& Road, double CrownHeight, double HalfWidth);
+
+	/** Sets (or replaces) a single road-type entry at s=0, applying to the whole road. */
+	static void SetRoadType(FOpenDriveMap& Map, FOpenDriveRoad& Road, EOpenDriveRoadType Type, const FString& Country = FString());
 
 	/** Sets a constant width (metres) for LaneId across every lane section of Road. */
 	static bool SetLaneWidthConstant(FOpenDriveRoad& Road, int32 LaneId, double Width);

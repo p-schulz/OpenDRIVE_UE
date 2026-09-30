@@ -149,6 +149,54 @@ namespace
 	}
 }
 
+EOpenDriveRoadType ParseOpenDriveRoadType(const FString& S)
+{
+	static const TPair<const TCHAR*, EOpenDriveRoadType> Map[] = {
+		{ TEXT("rural"), EOpenDriveRoadType::Rural },
+		{ TEXT("motorway"), EOpenDriveRoadType::Motorway },
+		{ TEXT("town"), EOpenDriveRoadType::Town },
+		{ TEXT("lowSpeed"), EOpenDriveRoadType::LowSpeed },
+		{ TEXT("pedestrian"), EOpenDriveRoadType::Pedestrian },
+		{ TEXT("bicycle"), EOpenDriveRoadType::Bicycle },
+		{ TEXT("townExpressway"), EOpenDriveRoadType::TownExpressway },
+		{ TEXT("townCollector"), EOpenDriveRoadType::TownCollector },
+		{ TEXT("townArterial"), EOpenDriveRoadType::TownArterial },
+		{ TEXT("townPrivate"), EOpenDriveRoadType::TownPrivate },
+		{ TEXT("townLocal"), EOpenDriveRoadType::TownLocal },
+		{ TEXT("townPlayStreet"), EOpenDriveRoadType::TownPlayStreet },
+	};
+	for (const TPair<const TCHAR*, EOpenDriveRoadType>& Entry : Map)
+	{
+		if (S.Equals(Entry.Key, ESearchCase::IgnoreCase))
+		{
+			return Entry.Value;
+		}
+	}
+	return EOpenDriveRoadType::Unknown;
+}
+
+FString OpenDriveRoadTypeToString(EOpenDriveRoadType Type)
+{
+	switch (Type)
+	{
+	case EOpenDriveRoadType::Rural: return TEXT("rural");
+	case EOpenDriveRoadType::Motorway: return TEXT("motorway");
+	case EOpenDriveRoadType::Town: return TEXT("town");
+	case EOpenDriveRoadType::LowSpeed: return TEXT("lowSpeed");
+	case EOpenDriveRoadType::Pedestrian: return TEXT("pedestrian");
+	case EOpenDriveRoadType::Bicycle: return TEXT("bicycle");
+	case EOpenDriveRoadType::TownExpressway: return TEXT("townExpressway");
+	case EOpenDriveRoadType::TownCollector: return TEXT("townCollector");
+	case EOpenDriveRoadType::TownArterial: return TEXT("townArterial");
+	case EOpenDriveRoadType::TownPrivate: return TEXT("townPrivate");
+	case EOpenDriveRoadType::TownLocal: return TEXT("townLocal");
+	case EOpenDriveRoadType::TownPlayStreet: return TEXT("townPlayStreet");
+	case EOpenDriveRoadType::Unknown:
+	default:
+		return TEXT("unknown");
+	}
+}
+
 double FOpenDriveCubic::EvalPiecewise(const TArray<FOpenDriveCubic>& Entries, double AbsS)
 {
 	if (Entries.Num() == 0)
@@ -271,8 +319,14 @@ bool FOpenDriveMap::LoadFromString(const FString& Xml, FString& OutError)
 			{
 				Road.SpeedLimits.Add(Limit);
 			}
+			FOpenDriveRoadTypeEntry TypeEntry;
+			TypeEntry.S = AttrD(TypeNode, TEXT("s"));
+			TypeEntry.Type = ParseOpenDriveRoadType(AttrS(TypeNode, TEXT("type")));
+			TypeEntry.Country = AttrS(TypeNode, TEXT("country"));
+			Road.Types.Add(TypeEntry);
 		}
 		Road.SpeedLimits.Sort([](const FOpenDriveSpeedLimit& A, const FOpenDriveSpeedLimit& B) { return A.S < B.S; });
+		Road.Types.Sort([](const FOpenDriveRoadTypeEntry& A, const FOpenDriveRoadTypeEntry& B) { return A.S < B.S; });
 
 		if (const FXmlNode* Elev = ODRXml::Child(RoadNode, TEXT("elevationProfile")))
 		{
@@ -290,6 +344,31 @@ bool FOpenDriveMap::LoadFromString(const FString& Xml, FString& OutError)
 				Road.Superelevation.Add(ParseCubic(E, TEXT("s"), 0.0));
 			}
 			Road.Superelevation.Sort([](const FOpenDriveCubic& A, const FOpenDriveCubic& B) { return A.S < B.S; });
+
+			for (const FXmlNode* E : ODRXml::Children(Lateral, TEXT("crossfall")))
+			{
+				FOpenDriveCrossfallEntry Entry;
+				const FString SideStr = AttrS(E, TEXT("side"));
+				Entry.Side = SideStr.Equals(TEXT("left"), ESearchCase::IgnoreCase) ? EOpenDriveCrossfallSide::Left
+					: SideStr.Equals(TEXT("right"), ESearchCase::IgnoreCase) ? EOpenDriveCrossfallSide::Right
+					: EOpenDriveCrossfallSide::Both;
+				Entry.Cubic = ParseCubic(E, TEXT("s"), 0.0);
+				Road.Crossfall.Add(Entry);
+			}
+			Road.Crossfall.Sort([](const FOpenDriveCrossfallEntry& A, const FOpenDriveCrossfallEntry& B) { return A.Cubic.S < B.Cubic.S; });
+
+			for (const FXmlNode* E : ODRXml::Children(Lateral, TEXT("shape")))
+			{
+				FOpenDriveShapeEntry Entry;
+				Entry.S = AttrD(E, TEXT("s"));
+				Entry.T = AttrD(E, TEXT("t"));
+				Entry.A = AttrD(E, TEXT("a"));
+				Entry.B = AttrD(E, TEXT("b"));
+				Entry.C = AttrD(E, TEXT("c"));
+				Entry.D = AttrD(E, TEXT("d"));
+				Road.Shape.Add(Entry);
+			}
+			Road.Shape.Sort([](const FOpenDriveShapeEntry& A, const FOpenDriveShapeEntry& B) { return A.S != B.S ? A.S < B.S : A.T < B.T; });
 		}
 
 		if (const FXmlNode* Lanes = ODRXml::Child(RoadNode, TEXT("lanes")))
@@ -504,17 +583,83 @@ double FOpenDriveMap::GetSuperelevation(const FOpenDriveRoad& Road, double S) co
 	return FOpenDriveCubic::EvalPiecewise(Road.Superelevation, S);
 }
 
+double FOpenDriveMap::GetCrossfallAngle(const FOpenDriveRoad& Road, double S, bool bLeftSide) const
+{
+	if (Road.Crossfall.Num() == 0)
+	{
+		return 0.0;
+	}
+	const EOpenDriveCrossfallSide Wanted = bLeftSide ? EOpenDriveCrossfallSide::Left : EOpenDriveCrossfallSide::Right;
+	int32 Best = INDEX_NONE;
+	for (int32 i = 0; i < Road.Crossfall.Num(); ++i)
+	{
+		const FOpenDriveCrossfallEntry& Entry = Road.Crossfall[i];
+		if (Entry.Cubic.S <= S + 1e-9 && (Entry.Side == Wanted || Entry.Side == EOpenDriveCrossfallSide::Both))
+		{
+			Best = i;
+		}
+	}
+	return Best != INDEX_NONE ? Road.Crossfall[Best].Cubic.Eval(S) : 0.0;
+}
+
+double FOpenDriveMap::GetShapeZ(const FOpenDriveRoad& Road, double S, double T) const
+{
+	if (Road.Shape.Num() == 0)
+	{
+		return 0.0;
+	}
+	// Shape.Num() > 0 is sorted by (S, T). Find the last row-group whose S <= the query S (first group if none).
+	int32 GroupStart = 0, GroupEnd = 0;
+	int32 i = 0;
+	while (i < Road.Shape.Num())
+	{
+		int32 j = i;
+		const double GroupS = Road.Shape[i].S;
+		while (j < Road.Shape.Num() && FMath::Abs(Road.Shape[j].S - GroupS) < 1e-9)
+		{
+			++j;
+		}
+		if (GroupS <= S + 1e-9)
+		{
+			GroupStart = i;
+			GroupEnd = j - 1;
+		}
+		else
+		{
+			break;
+		}
+		i = j;
+	}
+	// Within the group (ascending T), the last row with T <= the query T applies (first row if none).
+	int32 Best = GroupStart;
+	for (int32 k = GroupStart; k <= GroupEnd; ++k)
+	{
+		if (Road.Shape[k].T <= T + 1e-9)
+		{
+			Best = k;
+		}
+		else
+		{
+			break;
+		}
+	}
+	return Road.Shape[Best].Eval(T);
+}
+
 FOpenDrivePose FOpenDriveMap::EvaluatePose(const FOpenDriveRoad& Road, double S, double T) const
 {
 	S = FMath::Clamp(S, 0.0, Road.Length);
 	double X, Y, H;
 	EvaluateReferenceLine(Road, S, X, Y, H);
 
+	// Superelevation banks the whole cross-section; crossfall (usually used instead, on straights, for
+	// drainage) can differ per side. Shape is an additional, t-dependent "road carving" term on top.
+	const double Bank = Road.Superelevation.Num() > 0 ? GetSuperelevation(Road, S) : GetCrossfallAngle(Road, S, T >= 0.0);
+
 	FOpenDrivePose Pose;
 	Pose.X = X - T * FMath::Sin(H);
 	Pose.Y = Y + T * FMath::Cos(H);
-	// Small-angle banking approximation: crossfall and shape are not modelled.
-	Pose.Z = FOpenDriveCubic::EvalPiecewise(Road.Elevation, S) + T * FMath::Sin(GetSuperelevation(Road, S));
+	Pose.Z = FOpenDriveCubic::EvalPiecewise(Road.Elevation, S) + T * FMath::Sin(Bank) + GetShapeZ(Road, S, T);
 	Pose.Heading = H;
 	return Pose;
 }

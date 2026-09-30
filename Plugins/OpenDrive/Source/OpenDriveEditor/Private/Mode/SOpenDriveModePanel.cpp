@@ -102,6 +102,16 @@ void SOpenDriveModePanel::Construct(const FArguments& InArgs, FOpenDriveEditorCo
 					]
 					+ SWrapBox::Slot().Padding(0.f, 0.f, 4.f, 4.f)
 					[
+						MakeButton(LOCTEXT("LaneOffset", "Lane Offset"), LOCTEXT("LaneOffsetTip", "Open the dockable lane offset profile editor"),
+							[]() { FOpenDriveEditorModule::Get().OpenLaneOffsetTab(); return FReply::Handled(); }, Always)
+					]
+					+ SWrapBox::Slot().Padding(0.f, 0.f, 4.f, 4.f)
+					[
+						MakeButton(LOCTEXT("Crossfall", "Crossfall"), LOCTEXT("CrossfallTip", "Open the dockable crossfall (drainage banking) profile editor"),
+							[]() { FOpenDriveEditorModule::Get().OpenCrossfallTab(); return FReply::Handled(); }, Always)
+					]
+					+ SWrapBox::Slot().Padding(0.f, 0.f, 4.f, 4.f)
+					[
 						MakeButton(LOCTEXT("Apply", "Apply"), LOCTEXT("ApplyTip", "Write unapplied edits to the road network asset"),
 							[Ctx]() { Ctx->Apply(); return FReply::Handled(); }, [Ctx]() { return Ctx->GetAsset() && Ctx->IsDirty(); })
 					]

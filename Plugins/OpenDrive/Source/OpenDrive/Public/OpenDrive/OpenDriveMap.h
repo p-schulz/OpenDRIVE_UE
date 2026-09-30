@@ -25,6 +25,35 @@ enum class EOpenDriveContactPoint : uint8
 	End
 };
 
+/** Which side of the centre line a <crossfall> entry applies to. */
+enum class EOpenDriveCrossfallSide : uint8
+{
+	Left,
+	Right,
+	Both
+};
+
+/** <road><type type="..."/> — road category, independent of the speed limit it may carry. */
+enum class EOpenDriveRoadType : uint8
+{
+	Unknown,
+	Rural,
+	Motorway,
+	Town,
+	LowSpeed,
+	Pedestrian,
+	Bicycle,
+	TownExpressway,
+	TownCollector,
+	TownArterial,
+	TownPrivate,
+	TownLocal,
+	TownPlayStreet
+};
+
+OPENDRIVE_API EOpenDriveRoadType ParseOpenDriveRoadType(const FString& S);
+OPENDRIVE_API FString OpenDriveRoadTypeToString(EOpenDriveRoadType Type);
+
 /** Cubic polynomial a + b*ds + c*ds^2 + d*ds^3 with ds = s - S (S is an absolute road s-coordinate). */
 struct OPENDRIVE_API FOpenDriveCubic
 {
@@ -76,6 +105,43 @@ struct FOpenDriveSpeedLimit
 {
 	double S = 0.0;
 	double MaxSpeed = 0.0;
+};
+
+/** <road><type> entry: road category (and optional country code) valid from S on. Speed limits are
+ *  tracked separately in FOpenDriveRoad::SpeedLimits, parsed from the same <type><speed> child. */
+struct OPENDRIVE_API FOpenDriveRoadTypeEntry
+{
+	double S = 0.0;
+	EOpenDriveRoadType Type = EOpenDriveRoadType::Town;
+	FString Country;
+};
+
+/** <lateralProfile><crossfall>: banking angle in radians, like superelevation, but one-sided or applied
+ *  to both sides independently. Used (instead of superelevation) mainly for drainage on straight roads. */
+struct OPENDRIVE_API FOpenDriveCrossfallEntry
+{
+	EOpenDriveCrossfallSide Side = EOpenDriveCrossfallSide::Both;
+	FOpenDriveCubic Cubic;
+};
+
+/**
+ * <lateralProfile><shape>: additional cross-section height as a cubic in local dt = t - T, active from
+ * (S, T) on. Entries sharing the same S are the record's rows across t; the group with the greatest
+ * S <= query-S is active, and within it the row with the greatest T <= query-T applies. This is what
+ * most tools call "road carving" -- crowns, gutters, anything the road surface does across its width
+ * that elevation/superelevation/crossfall (which are t-independent, aside from side) can't express.
+ */
+struct OPENDRIVE_API FOpenDriveShapeEntry
+{
+	double S = 0.0;
+	double T = 0.0;
+	double A = 0.0, B = 0.0, C = 0.0, D = 0.0;
+
+	double Eval(double AbsT) const
+	{
+		const double Dt = AbsT - T;
+		return A + Dt * (B + Dt * (C + Dt * D));
+	}
 };
 
 struct OPENDRIVE_API FOpenDriveLane
@@ -135,12 +201,18 @@ struct OPENDRIVE_API FOpenDriveRoad
 	TArray<FOpenDriveGeometry> Geometry;
 	/** Reference-line elevation profile ("elevationProfile/elevation"). */
 	TArray<FOpenDriveCubic> Elevation;
-	/** Banking angle in radians about the s-axis ("lateralProfile/superelevation"). Crossfall and shape are not modelled. */
+	/** Banking angle in radians about the s-axis ("lateralProfile/superelevation"). Takes precedence over Crossfall where both are present. */
 	TArray<FOpenDriveCubic> Superelevation;
+	/** "lateralProfile/crossfall": one-sided (or symmetric) banking, used where Superelevation is empty. */
+	TArray<FOpenDriveCrossfallEntry> Crossfall;
+	/** "lateralProfile/shape": additive cross-section height as a function of (s, t) -- see FOpenDriveShapeEntry. Sorted by (S, T). */
+	TArray<FOpenDriveShapeEntry> Shape;
 	TArray<FOpenDriveCubic> LaneOffset;
 	TArray<FOpenDriveLaneSection> LaneSections;
 	/** Road-type speed limits (absolute s), used where a lane has none. */
 	TArray<FOpenDriveSpeedLimit> SpeedLimits;
+	/** Road category entries (absolute s); see FOpenDriveRoadTypeEntry. */
+	TArray<FOpenDriveRoadTypeEntry> Types;
 
 	// Derived at load time, used to prune spatial queries.
 	double MinX = 0.0, MinY = 0.0, MaxX = 0.0, MaxY = 0.0;
@@ -233,6 +305,10 @@ public:
 	FOpenDrivePose EvaluatePose(const FOpenDriveRoad& Road, double S, double T) const;
 	/** Banking angle in radians at S (0 if the road has no superelevation profile). */
 	double GetSuperelevation(const FOpenDriveRoad& Road, double S) const;
+	/** Crossfall banking angle in radians at S for the given side (0 if the road has no crossfall profile for that side). */
+	double GetCrossfallAngle(const FOpenDriveRoad& Road, double S, bool bLeftSide) const;
+	/** Additive "road carving" height from the lateral profile shape at (s, t) (0 if the road has no shape profile). */
+	double GetShapeZ(const FOpenDriveRoad& Road, double S, double T) const;
 
 	// --- Lanes --------------------------------------------------------------------------------
 	const FOpenDriveLaneSection* FindLaneSection(const FOpenDriveRoad& Road, double S) const;

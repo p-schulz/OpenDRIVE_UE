@@ -79,8 +79,26 @@ FString FOpenDriveWriter::Write(const FOpenDriveMap& Map)
 			Out += TEXT("\t\t</link>\n");
 		}
 
-		if (Road.SpeedLimits.Num() > 0)
+		if (Road.Types.Num() > 0)
 		{
+			for (const FOpenDriveRoadTypeEntry& TypeEntry : Road.Types)
+			{
+				const FOpenDriveSpeedLimit* Speed = Road.SpeedLimits.FindByPredicate([&](const FOpenDriveSpeedLimit& L) { return FMath::Abs(L.S - TypeEntry.S) < 1e-6; });
+				const FString CountryAttr = TypeEntry.Country.IsEmpty() ? FString() : FString::Printf(TEXT(" country=\"%s\""), *Esc(TypeEntry.Country));
+				if (Speed)
+				{
+					Out += FString::Printf(TEXT("\t\t<type s=\"%s\" type=\"%s\"%s>\n\t\t\t<speed max=\"%s\" unit=\"m/s\"/>\n\t\t</type>\n"),
+						*D(TypeEntry.S), *OpenDriveRoadTypeToString(TypeEntry.Type), *CountryAttr, *D(Speed->MaxSpeed));
+				}
+				else
+				{
+					Out += FString::Printf(TEXT("\t\t<type s=\"%s\" type=\"%s\"%s/>\n"), *D(TypeEntry.S), *OpenDriveRoadTypeToString(TypeEntry.Type), *CountryAttr);
+				}
+			}
+		}
+		else if (Road.SpeedLimits.Num() > 0)
+		{
+			// No explicit road-type entries (e.g. a road built entirely from the editor tool): default to "town".
 			for (const FOpenDriveSpeedLimit& Limit : Road.SpeedLimits)
 			{
 				Out += FString::Printf(TEXT("\t\t<type s=\"%s\" type=\"town\">\n\t\t\t<speed max=\"%s\" unit=\"m/s\"/>\n\t\t</type>\n"), *D(Limit.S), *D(Limit.MaxSpeed));
@@ -123,10 +141,21 @@ FString FOpenDriveWriter::Write(const FOpenDriveMap& Map)
 			Out += TEXT("\t\t</elevationProfile>\n");
 		}
 
-		if (Road.Superelevation.Num() > 0)
+		if (Road.Superelevation.Num() > 0 || Road.Crossfall.Num() > 0 || Road.Shape.Num() > 0)
 		{
 			Out += TEXT("\t\t<lateralProfile>\n");
 			WriteCubics(Out, TEXT("superelevation"), TEXT("s"), Road.Superelevation, 0.0, TEXT("\t\t\t"));
+			for (const FOpenDriveCrossfallEntry& Entry : Road.Crossfall)
+			{
+				const TCHAR* SideStr = Entry.Side == EOpenDriveCrossfallSide::Left ? TEXT("left") : Entry.Side == EOpenDriveCrossfallSide::Right ? TEXT("right") : TEXT("both");
+				Out += FString::Printf(TEXT("\t\t\t<crossfall side=\"%s\" s=\"%s\" a=\"%s\" b=\"%s\" c=\"%s\" d=\"%s\"/>\n"),
+					SideStr, *D(Entry.Cubic.S), *D(Entry.Cubic.A), *D(Entry.Cubic.B), *D(Entry.Cubic.C), *D(Entry.Cubic.D));
+			}
+			for (const FOpenDriveShapeEntry& Entry : Road.Shape)
+			{
+				Out += FString::Printf(TEXT("\t\t\t<shape s=\"%s\" t=\"%s\" a=\"%s\" b=\"%s\" c=\"%s\" d=\"%s\"/>\n"),
+					*D(Entry.S), *D(Entry.T), *D(Entry.A), *D(Entry.B), *D(Entry.C), *D(Entry.D));
+			}
 			Out += TEXT("\t\t</lateralProfile>\n");
 		}
 

@@ -3,10 +3,13 @@
 #include "OpenDrive/OpenDriveMap.h"
 #include "OpenDriveModelEdit.h"
 #include "Styling/AppStyle.h"
+#include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SComboButton.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SSpinBox.h"
 #include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SExpandableArea.h"
 #include "Widgets/Layout/SSplitter.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
@@ -135,6 +138,73 @@ void SOpenDriveRoadListTab::Construct(const FArguments& InArgs, FOpenDriveEditor
 							.IsEnabled(this, &SOpenDriveRoadListTab::IsBasicsEditable)
 							.Value(this, &SOpenDriveRoadListTab::GetLength)
 							.OnValueCommitted_Lambda([this](double V, ETextCommit::Type) { ApplyBasics(GetStartX(), GetStartY(), GetStartHeadingDeg(), V); })
+						]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(4.f)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 4.f, 0.f)[ SNew(STextBlock).Text(LOCTEXT("RoadType", "Road Type")) ]
+						+ SHorizontalBox::Slot().FillWidth(1.f)
+						[
+							SNew(SComboButton)
+							.IsEnabled(this, &SOpenDriveRoadListTab::HasSelection)
+							.ButtonContent()[ SNew(STextBlock).Text(this, &SOpenDriveRoadListTab::GetRoadTypeText) ]
+							.OnGetMenuContent(this, &SOpenDriveRoadListTab::BuildRoadTypeMenu)
+						]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(4.f, 8.f, 4.f, 4.f)
+					[
+						SNew(SExpandableArea)
+						.AreaTitle(LOCTEXT("CrownSection", "Cross-Section Shape (\"road carving\")"))
+						.InitiallyCollapsed(true)
+						.BodyContent()
+						[
+							SNew(SVerticalBox)
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f)
+							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 4.f, 0.f)[ SNew(STextBlock).Text(LOCTEXT("CrownHeight", "Crown Height (m)")) ]
+								+ SHorizontalBox::Slot().FillWidth(1.f)
+								[
+									SNew(SSpinBox<double>)
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasSelection)
+									.Value(this, &SOpenDriveRoadListTab::GetCrownHeight)
+									.OnValueChanged(this, &SOpenDriveRoadListTab::OnCrownHeightChanged)
+								]
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f)
+							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 4.f, 0.f)[ SNew(STextBlock).Text(LOCTEXT("CrownHalfWidth", "Half Width (m)")) ]
+								+ SHorizontalBox::Slot().FillWidth(1.f)
+								[
+									SNew(SSpinBox<double>)
+									.MinValue(0.1)
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasSelection)
+									.Value(this, &SOpenDriveRoadListTab::GetCrownHalfWidth)
+									.OnValueChanged(this, &SOpenDriveRoadListTab::OnCrownHalfWidthChanged)
+								]
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 4.f, 0.f, 0.f)
+							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().Padding(0.f, 0.f, 4.f, 0.f)
+								[
+									SNew(SButton)
+									.Text(LOCTEXT("ApplyCrown", "Apply Crown"))
+									.ToolTipText(LOCTEXT("ApplyCrownTip", "Replace the road's lateral profile shape with a symmetric crown of the given height and half width"))
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasSelection)
+									.OnClicked(this, &SOpenDriveRoadListTab::OnApplyCrownShapeClicked)
+								]
+								+ SHorizontalBox::Slot().AutoWidth()
+								[
+									SNew(SButton)
+									.Text(LOCTEXT("ClearCrown", "Clear"))
+									.ToolTipText(LOCTEXT("ClearCrownTip", "Remove the road's lateral profile shape"))
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasSelection)
+									.OnClicked(this, &SOpenDriveRoadListTab::OnClearCrownShapeClicked)
+								]
+							]
 						]
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(4.f)
@@ -302,6 +372,62 @@ void SOpenDriveRoadListTab::ApplyBasics(double NewX, double NewY, double NewHead
 	}
 	FOpenDriveModelEdit::SetStraightRoadBasics(Context->GetWorking(), Context->GetSelectedRoadId(), GetNameText().ToString(), NewX, NewY, NewHeadingDeg * DegToRad, NewLength);
 	Context->NotifyValueChanged();
+}
+
+FText SOpenDriveRoadListTab::GetRoadTypeText() const
+{
+	const FOpenDriveRoad* Road = Context ? Context->GetSelectedRoad() : nullptr;
+	if (!Road || Road->Types.Num() == 0)
+	{
+		return LOCTEXT("RoadTypeDefault", "town (default)");
+	}
+	return FText::FromString(OpenDriveRoadTypeToString(Road->Types[0].Type));
+}
+
+TSharedRef<SWidget> SOpenDriveRoadListTab::BuildRoadTypeMenu()
+{
+	static const EOpenDriveRoadType Types[] = {
+		EOpenDriveRoadType::Unknown, EOpenDriveRoadType::Rural, EOpenDriveRoadType::Motorway, EOpenDriveRoadType::Town,
+		EOpenDriveRoadType::LowSpeed, EOpenDriveRoadType::Pedestrian, EOpenDriveRoadType::Bicycle,
+		EOpenDriveRoadType::TownExpressway, EOpenDriveRoadType::TownCollector, EOpenDriveRoadType::TownArterial,
+		EOpenDriveRoadType::TownPrivate, EOpenDriveRoadType::TownLocal, EOpenDriveRoadType::TownPlayStreet
+	};
+	FMenuBuilder Menu(true, nullptr);
+	for (const EOpenDriveRoadType Type : Types)
+	{
+		Menu.AddMenuEntry(FText::FromString(OpenDriveRoadTypeToString(Type)), FText(), FSlateIcon(),
+			FUIAction(FExecuteAction::CreateSP(this, &SOpenDriveRoadListTab::OnRoadTypePicked, Type)));
+	}
+	return Menu.MakeWidget();
+}
+
+void SOpenDriveRoadListTab::OnRoadTypePicked(EOpenDriveRoadType Type)
+{
+	if (Context && Context->GetSelectedRoadMutable())
+	{
+		FOpenDriveModelEdit::SetRoadType(Context->GetWorking(), *Context->GetSelectedRoadMutable(), Type);
+		Context->NotifyValueChanged();
+	}
+}
+
+FReply SOpenDriveRoadListTab::OnApplyCrownShapeClicked()
+{
+	if (Context && Context->GetSelectedRoadMutable())
+	{
+		FOpenDriveModelEdit::SetSymmetricCrownShape(Context->GetWorking(), *Context->GetSelectedRoadMutable(), PendingCrownHeight, PendingCrownHalfWidth);
+		Context->NotifyValueChanged();
+	}
+	return FReply::Handled();
+}
+
+FReply SOpenDriveRoadListTab::OnClearCrownShapeClicked()
+{
+	if (Context && Context->GetSelectedRoadMutable())
+	{
+		Context->GetSelectedRoadMutable()->Shape.Reset();
+		Context->NotifyValueChanged();
+	}
+	return FReply::Handled();
 }
 
 FText SOpenDriveRoadListTab::GetInfoText() const

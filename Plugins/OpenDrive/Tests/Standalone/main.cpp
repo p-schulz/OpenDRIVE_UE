@@ -76,6 +76,79 @@ namespace
 </OpenDRIVE>
 )XODR";
 	}
+
+	const char* CrossfallXodr()
+	{
+		return R"XODR(<?xml version="1.0"?>
+<OpenDRIVE>
+	<header name="CrossfallTest" />
+	<road name="Banked" length="60.0" id="2" junction="-1">
+		<type s="0" type="motorway" country="US">
+			<speed max="120" unit="km/h"/>
+		</type>
+		<planView>
+			<geometry s="0" x="0" y="0" hdg="0" length="60">
+				<line/>
+			</geometry>
+		</planView>
+		<lateralProfile>
+			<crossfall side="left" s="0" a="0.02" b="0" c="0" d="0"/>
+			<crossfall side="right" s="0" a="-0.03" b="0" c="0" d="0"/>
+			<shape s="0" t="-2" a="0" b="0.05" c="0" d="0"/>
+			<shape s="0" t="0" a="0.1" b="-0.05" c="0" d="0"/>
+			<shape s="0" t="2" a="0" b="0" c="0" d="0"/>
+		</lateralProfile>
+		<lanes>
+			<laneSection s="0">
+				<left>
+					<lane id="1" type="driving" level="false">
+						<width sOffset="0" a="3.5" b="0" c="0" d="0"/>
+					</lane>
+				</left>
+				<center>
+					<lane id="0" type="none" level="false"/>
+				</center>
+				<right>
+					<lane id="-1" type="driving" level="false">
+						<width sOffset="0" a="3.5" b="0" c="0" d="0"/>
+					</lane>
+				</right>
+			</laneSection>
+		</lanes>
+	</road>
+</OpenDRIVE>
+)XODR";
+	}
+
+	void CheckCrossfallRoad(const FOpenDriveMap& CMap, const char* Tag)
+	{
+		const FOpenDriveRoad* CRoad = CMap.FindRoad(FString("2"));
+		if (!CRoad)
+		{
+			Check(false, (FString("find road 2 (") + Tag + ")").S.c_str());
+			return;
+		}
+		Check(CRoad->Types.Num() == 1, (FString("type entry count (") + Tag + ")").S.c_str());
+		if (CRoad->Types.Num() == 1)
+		{
+			Check(CRoad->Types[0].Type == EOpenDriveRoadType::Motorway, (FString("road type is motorway (") + Tag + ")").S.c_str());
+			Check(CRoad->Types[0].Country == FString("US"), (FString("road type country (") + Tag + ")").S.c_str());
+		}
+		CheckNear(CMap.GetSpeedLimit(*CRoad, 10.0, -1), 120.0 / 3.6, 1e-6, (FString("road-type speed limit (") + Tag + ")").S.c_str());
+
+		CheckNear(CMap.GetCrossfallAngle(*CRoad, 10.0, true), 0.02, 1e-9, (FString("crossfall left angle (") + Tag + ")").S.c_str());
+		CheckNear(CMap.GetCrossfallAngle(*CRoad, 10.0, false), -0.03, 1e-9, (FString("crossfall right angle (") + Tag + ")").S.c_str());
+
+		CheckNear(CMap.GetShapeZ(*CRoad, 10.0, 1.0), 0.05, 1e-9, (FString("shape z at t=1 (") + Tag + ")").S.c_str());
+		CheckNear(CMap.GetShapeZ(*CRoad, 10.0, -1.0), 0.05, 1e-9, (FString("shape z at t=-1 (") + Tag + ")").S.c_str());
+
+		// No superelevation on this road, so EvaluatePose must fall back to the per-side crossfall angle,
+		// plus the additive shape ("road carving") term.
+		const FOpenDrivePose Left = CMap.EvaluatePose(*CRoad, 10.0, 1.0);
+		CheckNear(Left.Z, 1.0 * std::sin(0.02) + 0.05, 1e-6, (FString("pose z, left side (") + Tag + ")").S.c_str());
+		const FOpenDrivePose Right = CMap.EvaluatePose(*CRoad, 10.0, -1.0);
+		CheckNear(Right.Z, -1.0 * std::sin(-0.03) + 0.05, 1e-6, (FString("pose z, right side (") + Tag + ")").S.c_str());
+	}
 }
 
 int main()
@@ -130,6 +203,24 @@ int main()
 		Check(false, "round trip: find road 1");
 	}
 
+	// --- Crossfall, shape ("road carving") and road type: parse + writer round trip ----------------
+	{
+		FOpenDriveMap CMap;
+		FString CErr;
+		Check(CMap.LoadFromString(CrossfallXodr(), CErr), "parse crossfall xodr");
+		CheckCrossfallRoad(CMap, "parsed");
+
+		const FString CWritten = FOpenDriveWriter::Write(CMap);
+		Check(CWritten.S.find("crossfall") != std::string::npos, "writer emits crossfall");
+		Check(CWritten.S.find("shape") != std::string::npos, "writer emits shape");
+		Check(CWritten.S.find("motorway") != std::string::npos, "writer emits road type");
+
+		FOpenDriveMap CReparsed;
+		FString CReparseErr;
+		Check(CReparsed.LoadFromString(CWritten, CReparseErr), "reparse crossfall xodr");
+		CheckCrossfallRoad(CReparsed, "round trip");
+	}
+
 	// --- Model editing ----------------------------------------------------------------------------
 	{
 		FOpenDriveMap EditMap;
@@ -175,6 +266,24 @@ int main()
 
 			Check(FOpenDriveModelEdit::SetLaneWidthConstant(*Road1, -1, 4.0), "SetLaneWidthConstant succeeds");
 			CheckNear(EditMap.GetLaneWidth(*Road1, 60.0, -1), 4.0, 1e-9, "SetLaneWidthConstant: new width");
+
+			TArray<FOpenDriveCubic> CrossfallCubics;
+			CrossfallCubics.Add(FOpenDriveCubic{ 0.0, 0.04, 0.0, 0.0, 0.0 });
+			FOpenDriveModelEdit::SetCrossfallProfile(EditMap, *Road1, CrossfallCubics);
+			Check(Road1->Crossfall.Num() == 1 && Road1->Crossfall[0].Side == EOpenDriveCrossfallSide::Both, "SetCrossfallProfile: single Both-side entry");
+			CheckNear(EditMap.GetCrossfallAngle(*Road1, 10.0, true), 0.04, 1e-9, "SetCrossfallProfile: left angle");
+			CheckNear(EditMap.GetCrossfallAngle(*Road1, 10.0, false), 0.04, 1e-9, "SetCrossfallProfile: right angle (Both side)");
+			const TArray<FOpenDriveCubic> ExtractedCrossfall = FOpenDriveModelEdit::ExtractCrossfallCubics(Road1->Crossfall);
+			Check(ExtractedCrossfall.Num() == 1, "ExtractCrossfallCubics: round trips Both entries");
+
+			FOpenDriveModelEdit::SetSymmetricCrownShape(EditMap, *Road1, 0.1, 2.0);
+			CheckNear(EditMap.GetShapeZ(*Road1, 10.0, 0.0), 0.1, 1e-9, "SetSymmetricCrownShape: peak at centre");
+			CheckNear(EditMap.GetShapeZ(*Road1, 10.0, -2.0), 0.0, 1e-9, "SetSymmetricCrownShape: zero at -HalfWidth");
+			CheckNear(EditMap.GetShapeZ(*Road1, 10.0, 2.0), 0.0, 1e-9, "SetSymmetricCrownShape: zero at +HalfWidth");
+			CheckNear(EditMap.GetShapeZ(*Road1, 10.0, 1.0), 0.05, 1e-9, "SetSymmetricCrownShape: halfway down the falling side");
+
+			FOpenDriveModelEdit::SetRoadType(EditMap, *Road1, EOpenDriveRoadType::Rural, TEXT("DE"));
+			Check(Road1->Types.Num() == 1 && Road1->Types[0].Type == EOpenDriveRoadType::Rural && Road1->Types[0].Country == FString("DE"), "SetRoadType");
 		}
 		else
 		{

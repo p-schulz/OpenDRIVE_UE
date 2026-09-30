@@ -113,6 +113,8 @@ public:
 	void Swap(int32 a, int32 b) { std::swap(V[a], V[b]); }
 	bool Contains(const T& t) const { for (auto& x : V) if (x == t) return true; return false; }
 	template <class P> int32 IndexOfByPredicate(P p) const { for (size_t i = 0; i < V.size(); ++i) if (p(V[i])) return (int32)i; return INDEX_NONE; }
+	template <class P> const T* FindByPredicate(P p) const { for (auto& x : V) if (p(x)) return &x; return nullptr; }
+	template <class P> T* FindByPredicate(P p) { for (auto& x : V) if (p(x)) return &x; return nullptr; }
 	template <class P> int32 RemoveAll(P p) { int32 n = 0; for (size_t i = 0; i < V.size();) { if (p(V[i])) { V.erase(V.begin() + i); ++n; } else { ++i; } } return n; }
 };
 namespace Algo { template <class A> void Reverse(A& a) { std::reverse(a.V.begin(), a.V.end()); } }

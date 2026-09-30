@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "OpenDrive/OpenDriveMap.h"
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/Views/SListView.h"
@@ -46,10 +47,25 @@ private:
 	void ApplyBasics(double NewX, double NewY, double NewHeadingDeg, double NewLength);
 	FText GetInfoText() const;
 
+	// Road type
+	FText GetRoadTypeText() const;
+	TSharedRef<SWidget> BuildRoadTypeMenu();
+	void OnRoadTypePicked(EOpenDriveRoadType Type);
+
+	// Cross-section shape ("road carving")
+	double GetCrownHeight() const { return PendingCrownHeight; }
+	double GetCrownHalfWidth() const { return PendingCrownHalfWidth; }
+	void OnCrownHeightChanged(double V) { PendingCrownHeight = V; }
+	void OnCrownHalfWidthChanged(double V) { PendingCrownHalfWidth = FMath::Max(0.1, V); }
+	FReply OnApplyCrownShapeClicked();
+	FReply OnClearCrownShapeClicked();
+
 	FOpenDriveEditorContext* Context = nullptr;
 	TArray<FRowPtr> Rows;
 	TSharedPtr<SListView<FRowPtr>> List;
 	FDelegateHandle StructureHandle;
 	FDelegateHandle SelectionHandle;
 	bool bUpdatingSelection = false;
+	double PendingCrownHeight = 0.05;
+	double PendingCrownHalfWidth = 1.75;
 };
