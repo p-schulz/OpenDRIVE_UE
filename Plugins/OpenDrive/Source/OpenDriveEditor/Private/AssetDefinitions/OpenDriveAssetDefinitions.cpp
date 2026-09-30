@@ -1,4 +1,4 @@
-#include "AssetDefinitions/AssetDefinitions.h"
+#include "AssetDefinitions/OpenDriveAssetDefinitions.h"
 #include "OpenDrive/OpenDriveAsset.h"
 
 #define LOCTEXT_NAMESPACE "OpenDriveAssetDefinitions"
