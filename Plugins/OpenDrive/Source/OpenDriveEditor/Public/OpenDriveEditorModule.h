@@ -9,7 +9,7 @@ class SDockTab;
 class FSpawnTabArgs;
 
 /** Editor module: asset factory/definition, dockable authoring tabs and the OpenDRIVE editor mode. */
-class FOpenDriveEditorModule : public IModuleInterface
+class OPENDRIVEEDITOR_API FOpenDriveEditorModule : public IModuleInterface
 {
 public:
 	static const FName RoadListTabId;
