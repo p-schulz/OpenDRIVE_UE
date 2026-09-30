@@ -200,6 +200,138 @@ bool FOpenDriveModelEdit::RenameRoad(FOpenDriveMap& Map, const FString& RoadId, 
 	return true;
 }
 
+void FOpenDriveModelEdit::AppendLineSegment(FOpenDriveMap& Map, FOpenDriveRoad& Road, double Length)
+{
+	double X, Y, H;
+	Map.EvaluateReferenceLine(Road, Road.Length, X, Y, H);
+
+	FOpenDriveGeometry Geo;
+	Geo.Type = EOpenDriveGeometryType::Line;
+	Geo.S = Road.Length;
+	Geo.X = X;
+	Geo.Y = Y;
+	Geo.Hdg = H;
+	Geo.Length = FMath::Max(0.1, Length);
+	Road.Geometry.Add(Geo);
+
+	Road.Length += Geo.Length;
+	if (Road.LaneSections.Num() > 0)
+	{
+		Road.LaneSections.Last().EndS = Road.Length;
+	}
+	Map.ComputeRoadBounds(Road);
+}
+
+void FOpenDriveModelEdit::AppendArcSegment(FOpenDriveMap& Map, FOpenDriveRoad& Road, double Length, double Curvature)
+{
+	double X, Y, H;
+	Map.EvaluateReferenceLine(Road, Road.Length, X, Y, H);
+
+	FOpenDriveGeometry Geo;
+	Geo.Type = EOpenDriveGeometryType::Arc;
+	Geo.S = Road.Length;
+	Geo.X = X;
+	Geo.Y = Y;
+	Geo.Hdg = H;
+	Geo.Length = FMath::Max(0.1, Length);
+	Geo.Curvature = Curvature;
+	Road.Geometry.Add(Geo);
+
+	Road.Length += Geo.Length;
+	if (Road.LaneSections.Num() > 0)
+	{
+		Road.LaneSections.Last().EndS = Road.Length;
+	}
+	Map.ComputeRoadBounds(Road);
+}
+
+void FOpenDriveModelEdit::AppendSpiralSegment(FOpenDriveMap& Map, FOpenDriveRoad& Road, double Length, double CurvStart, double CurvEnd)
+{
+	double X, Y, H;
+	Map.EvaluateReferenceLine(Road, Road.Length, X, Y, H);
+
+	FOpenDriveGeometry Geo;
+	Geo.Type = EOpenDriveGeometryType::Spiral;
+	Geo.S = Road.Length;
+	Geo.X = X;
+	Geo.Y = Y;
+	Geo.Hdg = H;
+	Geo.Length = FMath::Max(0.1, Length);
+	Geo.CurvStart = CurvStart;
+	Geo.CurvEnd = CurvEnd;
+	Road.Geometry.Add(Geo);
+
+	Road.Length += Geo.Length;
+	if (Road.LaneSections.Num() > 0)
+	{
+		Road.LaneSections.Last().EndS = Road.Length;
+	}
+	Map.ComputeRoadBounds(Road);
+}
+
+bool FOpenDriveModelEdit::RemoveLastGeometrySegment(FOpenDriveMap& Map, FOpenDriveRoad& Road)
+{
+	if (Road.Geometry.Num() <= 1)
+	{
+		return false;
+	}
+	const FOpenDriveGeometry Removed = Road.Geometry.Last();
+	Road.Geometry.RemoveAt(Road.Geometry.Num() - 1);
+	Road.Length = Removed.S;
+	if (Road.LaneSections.Num() > 0)
+	{
+		Road.LaneSections.Last().EndS = Road.Length;
+	}
+	Map.ComputeRoadBounds(Road);
+	return true;
+}
+
+FString FOpenDriveModelEdit::DescribeGeometrySegment(const FOpenDriveGeometry& Geo)
+{
+	switch (Geo.Type)
+	{
+	case EOpenDriveGeometryType::Line:
+		return FString::Printf(TEXT("Line   s=%.1f len=%.1f"), Geo.S, Geo.Length);
+	case EOpenDriveGeometryType::Arc:
+		return FString::Printf(TEXT("Arc    s=%.1f len=%.1f curv=%.4f"), Geo.S, Geo.Length, Geo.Curvature);
+	case EOpenDriveGeometryType::Spiral:
+		return FString::Printf(TEXT("Spiral s=%.1f len=%.1f curv=%.4f->%.4f"), Geo.S, Geo.Length, Geo.CurvStart, Geo.CurvEnd);
+	case EOpenDriveGeometryType::Poly3:
+		return FString::Printf(TEXT("Poly3  s=%.1f len=%.1f"), Geo.S, Geo.Length);
+	case EOpenDriveGeometryType::ParamPoly3:
+		return FString::Printf(TEXT("ParamPoly3 s=%.1f len=%.1f"), Geo.S, Geo.Length);
+	default:
+		return FString::Printf(TEXT("? s=%.1f len=%.1f"), Geo.S, Geo.Length);
+	}
+}
+
+bool FOpenDriveModelEdit::InsertLaneSection(FOpenDriveMap& Map, FOpenDriveRoad& Road, double S)
+{
+	if (S <= 1e-6 || S >= Road.Length - 1e-6)
+	{
+		return false;
+	}
+	int32 Index = INDEX_NONE;
+	for (int32 i = 0; i < Road.LaneSections.Num(); ++i)
+	{
+		if (S > Road.LaneSections[i].S + 1e-6 && S < Road.LaneSections[i].EndS - 1e-6)
+		{
+			Index = i;
+			break;
+		}
+	}
+	if (Index == INDEX_NONE)
+	{
+		return false;
+	}
+	FOpenDriveLaneSection NewSection = Road.LaneSections[Index];
+	NewSection.S = S;
+	Road.LaneSections[Index].EndS = S;
+	Road.LaneSections.Insert(MoveTemp(NewSection), Index + 1);
+	Map.ComputeRoadBounds(Road);
+	return true;
+}
+
 void FOpenDriveModelEdit::SetElevationProfile(FOpenDriveMap& Map, FOpenDriveRoad& Road, TArray<FOpenDriveCubic> NewProfile)
 {
 	Road.Elevation = MoveTemp(NewProfile);

@@ -117,6 +117,11 @@ void SOpenDriveModePanel::Construct(const FArguments& InArgs, FOpenDriveEditorCo
 					]
 					+ SWrapBox::Slot().Padding(0.f, 0.f, 4.f, 4.f)
 					[
+						MakeButton(LOCTEXT("PlanView", "Plan View"), LOCTEXT("PlanViewTip", "Open the dockable plan-view geometry editor (append line/arc/spiral segments, split lane sections)"),
+							[]() { FOpenDriveEditorModule::Get().OpenPlanViewTab(); return FReply::Handled(); }, Always)
+					]
+					+ SWrapBox::Slot().Padding(0.f, 0.f, 4.f, 4.f)
+					[
 						MakeButton(LOCTEXT("Apply", "Apply"), LOCTEXT("ApplyTip", "Write unapplied edits to the road network asset"),
 							[Ctx]() { Ctx->Apply(); return FReply::Handled(); }, [Ctx]() { return Ctx->GetAsset() && Ctx->IsDirty(); })
 					]

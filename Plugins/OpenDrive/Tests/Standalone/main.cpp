@@ -574,6 +574,99 @@ int main()
 		Check(LinkMap.FindRoad(RoadD)->SuccessorType == EOpenDriveElementType::None, "RemoveJunction clears incoming road's link to it");
 	}
 
+	// --- Plan-view geometry authoring (Phase 5) ----------------------------------------------------
+	{
+		FOpenDriveMap GeoMap;
+		const FString RoadId = FOpenDriveModelEdit::AddStraightRoad(GeoMap, TEXT("Geo"), 0.0, 0.0, 0.0, 50.0);
+		FOpenDriveRoad* Road = GeoMap.FindRoadMutable(RoadId);
+		Check(Road != nullptr, "geo test: find road");
+		if (Road)
+		{
+			double EndX0, EndY0, EndH0;
+			GeoMap.EvaluateReferenceLine(*Road, Road->Length, EndX0, EndY0, EndH0);
+
+			// Append a line: continues straight from the end of segment 0.
+			FOpenDriveModelEdit::AppendLineSegment(GeoMap, *Road, 20.0);
+			Check(Road->Geometry.Num() == 2, "AppendLineSegment: adds a segment");
+			CheckNear(Road->Length, 70.0, 1e-9, "AppendLineSegment: extends road length");
+			CheckNear(Road->LaneSections.Last().EndS, 70.0, 1e-9, "AppendLineSegment: extends last lane section EndS");
+			CheckNear(Road->Geometry[1].S, 50.0, 1e-9, "AppendLineSegment: new segment starts at old length");
+			CheckNear(Road->Geometry[1].X, EndX0, 1e-6, "AppendLineSegment: continuous X");
+			CheckNear(Road->Geometry[1].Y, EndY0, 1e-6, "AppendLineSegment: continuous Y");
+			CheckNear(Road->Geometry[1].Hdg, EndH0, 1e-6, "AppendLineSegment: continuous heading");
+
+			double MidX, MidY, MidH;
+			GeoMap.EvaluateReferenceLine(*Road, 70.0, MidX, MidY, MidH);
+
+			// Append an arc: a quarter turn of radius 10 (curvature 0.1).
+			const double Curvature = 0.1;
+			const double ArcLength = M_PI / 2.0 / Curvature; // quarter circle
+			FOpenDriveModelEdit::AppendArcSegment(GeoMap, *Road, ArcLength, Curvature);
+			Check(Road->Geometry.Num() == 3, "AppendArcSegment: adds a segment");
+			CheckNear(Road->Geometry[2].X, MidX, 1e-6, "AppendArcSegment: continuous X");
+			CheckNear(Road->Geometry[2].Y, MidY, 1e-6, "AppendArcSegment: continuous Y");
+			CheckNear(Road->Geometry[2].Hdg, MidH, 1e-6, "AppendArcSegment: continuous heading");
+			CheckNear(Road->Length, 70.0 + ArcLength, 1e-6, "AppendArcSegment: extends road length");
+
+			double ArcEndX, ArcEndY, ArcEndH;
+			GeoMap.EvaluateReferenceLine(*Road, Road->Length, ArcEndX, ArcEndY, ArcEndH);
+			CheckNear(ArcEndH, MidH + M_PI / 2.0, 1e-6, "AppendArcSegment: quarter turn changes heading by 90 degrees");
+
+			// Append a spiral (clothoid) from curvature 0 back to 0.1 over 10 m, continuous with the arc's end.
+			FOpenDriveModelEdit::AppendSpiralSegment(GeoMap, *Road, 10.0, 0.0, 0.1);
+			Check(Road->Geometry.Num() == 4, "AppendSpiralSegment: adds a segment");
+			CheckNear(Road->Geometry[3].X, ArcEndX, 1e-6, "AppendSpiralSegment: continuous X");
+			CheckNear(Road->Geometry[3].Y, ArcEndY, 1e-6, "AppendSpiralSegment: continuous Y");
+			CheckNear(Road->Geometry[3].Hdg, ArcEndH, 1e-6, "AppendSpiralSegment: continuous heading");
+
+			const double LengthBeforeRemove = Road->Length;
+			Check(FOpenDriveModelEdit::RemoveLastGeometrySegment(GeoMap, *Road), "RemoveLastGeometrySegment: removes the spiral");
+			Check(Road->Geometry.Num() == 3, "RemoveLastGeometrySegment: segment count back to 3");
+			CheckNear(Road->Length, LengthBeforeRemove - 10.0, 1e-9, "RemoveLastGeometrySegment: length shrinks back");
+			CheckNear(Road->LaneSections.Last().EndS, Road->Length, 1e-9, "RemoveLastGeometrySegment: lane section EndS follows");
+
+			const FString Desc = FOpenDriveModelEdit::DescribeGeometrySegment(Road->Geometry[2]);
+			Check(Desc.S.find("Arc") != std::string::npos, "DescribeGeometrySegment: names the arc segment");
+
+			// Down to a single segment: refuse to remove the last one.
+			FOpenDriveModelEdit::RemoveLastGeometrySegment(GeoMap, *Road); // removes the arc -> 2 left
+			FOpenDriveModelEdit::RemoveLastGeometrySegment(GeoMap, *Road); // removes the appended line -> 1 left
+			Check(!FOpenDriveModelEdit::RemoveLastGeometrySegment(GeoMap, *Road), "RemoveLastGeometrySegment: refuses to remove the only segment");
+			Check(Road->Geometry.Num() == 1, "RemoveLastGeometrySegment: one segment remains");
+		}
+
+		// --- Lane section splitting ---
+		FOpenDriveRoad* LaneRoad = GeoMap.FindRoadMutable(RoadId);
+		if (LaneRoad)
+		{
+			LaneRoad->Length = 50.0;
+			LaneRoad->LaneSections.Reset();
+			FOpenDriveLaneSection Section;
+			Section.S = 0.0;
+			Section.EndS = 50.0;
+			FOpenDriveLane L;
+			L.Id = 1;
+			L.Type = TEXT("driving");
+			L.Widths.Add(FOpenDriveCubic{ 0.0, 3.5, 0.0, 0.0, 0.0 });
+			Section.Lanes.Add(L);
+			LaneRoad->LaneSections.Add(Section);
+
+			Check(!FOpenDriveModelEdit::InsertLaneSection(GeoMap, *LaneRoad, 0.0), "InsertLaneSection: refuses at S=0 (already a boundary)");
+			Check(!FOpenDriveModelEdit::InsertLaneSection(GeoMap, *LaneRoad, 50.0), "InsertLaneSection: refuses at S=length (already a boundary)");
+			Check(FOpenDriveModelEdit::InsertLaneSection(GeoMap, *LaneRoad, 20.0), "InsertLaneSection: splits at S=20");
+			Check(LaneRoad->LaneSections.Num() == 2, "InsertLaneSection: now two sections");
+			if (LaneRoad->LaneSections.Num() == 2)
+			{
+				CheckNear(LaneRoad->LaneSections[0].S, 0.0, 1e-9, "InsertLaneSection: first section starts at 0");
+				CheckNear(LaneRoad->LaneSections[0].EndS, 20.0, 1e-9, "InsertLaneSection: first section ends at split");
+				CheckNear(LaneRoad->LaneSections[1].S, 20.0, 1e-9, "InsertLaneSection: second section starts at split");
+				CheckNear(LaneRoad->LaneSections[1].EndS, 50.0, 1e-9, "InsertLaneSection: second section ends at road length");
+				Check(LaneRoad->LaneSections[1].FindLane(1) != nullptr, "InsertLaneSection: lane structure duplicated into the new section");
+			}
+			Check(!FOpenDriveModelEdit::InsertLaneSection(GeoMap, *LaneRoad, 20.0), "InsertLaneSection: refuses at an existing boundary");
+		}
+	}
+
 	// --- Profile <-> points round trip -----------------------------------------------------------
 	{
 		TArray<FOpenDriveCubic> Profile;

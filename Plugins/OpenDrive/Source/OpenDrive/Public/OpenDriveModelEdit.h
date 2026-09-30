@@ -36,6 +36,33 @@ public:
 	/** Renames a road without touching its geometry. */
 	static bool RenameRoad(FOpenDriveMap& Map, const FString& RoadId, const FString& NewName);
 
+	// --- Plan-view geometry authoring -------------------------------------------------------------
+	/**
+	 * Appends a Line/Arc/Spiral segment to the end of Road's reference line, starting exactly where the
+	 * current last segment ends (position and heading taken from Map.EvaluateReferenceLine at Road.Length),
+	 * so appended segments are always position- and heading-continuous with what came before. Extends
+	 * Road.Length and the last lane section's EndS to match. Curvature is in 1/m (positive = left turn);
+	 * for AppendSpiral, CurvStart/CurvEnd are the curvature at the start/end of the transition. Poly3 and
+	 * ParamPoly3 segments are not authorable this way -- append/insert only covers line/arc/spiral, per the
+	 * plan's scope (numeric append, not free-form control-point dragging).
+	 */
+	static void AppendLineSegment(FOpenDriveMap& Map, FOpenDriveRoad& Road, double Length);
+	static void AppendArcSegment(FOpenDriveMap& Map, FOpenDriveRoad& Road, double Length, double Curvature);
+	static void AppendSpiralSegment(FOpenDriveMap& Map, FOpenDriveRoad& Road, double Length, double CurvStart, double CurvEnd);
+	/** Removes the last geometry segment (undoes an Append*), unless it is the road's only segment. Shrinks
+	 *  Road.Length and the last lane section's EndS to the new total length. Returns false if only one segment remains. */
+	static bool RemoveLastGeometrySegment(FOpenDriveMap& Map, FOpenDriveRoad& Road);
+	/** Human-readable one-line description of a geometry segment, for the plan-view segment list. */
+	static FString DescribeGeometrySegment(const FOpenDriveGeometry& Geo);
+
+	/**
+	 * Splits the lane section active at S into two, duplicating its lane structure (ids/types/road marks;
+	 * widths are copied as-is, so both halves start identical and can then be edited independently, e.g. to
+	 * taper a lane in/out). No-op (returns false) if S is not strictly inside a section (i.e. already a
+	 * section boundary, or outside [0, Road.Length]).
+	 */
+	static bool InsertLaneSection(FOpenDriveMap& Map, FOpenDriveRoad& Road, double S);
+
 	static void SetElevationProfile(FOpenDriveMap& Map, FOpenDriveRoad& Road, TArray<FOpenDriveCubic> NewProfile);
 	static void SetSuperelevationProfile(FOpenDriveMap& Map, FOpenDriveRoad& Road, TArray<FOpenDriveCubic> NewProfile);
 	static void SetLaneOffsetProfile(FOpenDriveMap& Map, FOpenDriveRoad& Road, TArray<FOpenDriveCubic> NewProfile);
