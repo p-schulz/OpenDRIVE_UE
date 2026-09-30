@@ -5,6 +5,7 @@
 #include "OpenDrive/OpenDriveAsset.h"
 #include "OpenDriveWriter.h"
 #include "OpenDriveModelEdit.h"
+#include "OpenDriveMeshBuilder.h"
 #include <cstdio>
 #include <cmath>
 #include <cstdlib>
@@ -12,6 +13,7 @@
 #include <filesystem>
 
 FVector FVector::OneVector(1, 1, 1);
+FVector FVector::UpVector(0, 0, 1);
 FTransform FTransform::Identity;
 
 namespace
@@ -34,6 +36,19 @@ namespace
 			std::printf("FAIL: %s (got %.6f, expected %.6f)\n", Msg, A, B);
 			++Failures;
 		}
+	}
+
+	double SectionAreaCm2(const FOpenDriveMeshSection& Section)
+	{
+		double Area = 0.0;
+		for (int32 i = 0; i + 2 < Section.Indices.Num(); i += 3)
+		{
+			const FVector& A = Section.Positions[Section.Indices[i]];
+			const FVector& B = Section.Positions[Section.Indices[i + 1]];
+			const FVector& C = Section.Positions[Section.Indices[i + 2]];
+			Area += 0.5 * FVector::CrossProduct(B - A, C - A).Size();
+		}
+		return Area;
 	}
 
 	const char* SampleXodr()
@@ -743,6 +758,98 @@ int main()
 
 		Check(FOpenDriveModelEdit::RemoveJunctionGroup(GroupMap, GroupId), "RemoveJunctionGroup");
 		Check(GroupMap.FindJunctionGroup(GroupId) == nullptr, "junction group removed");
+	}
+
+	// --- Mesh generation (Phase 7) ------------------------------------------------------------------
+	{
+		Check(FOpenDriveMeshBuilder::ClassifyLaneType(TEXT("driving")) == EOpenDriveMeshMaterialSlot::Asphalt, "ClassifyLaneType: driving -> Asphalt");
+		Check(FOpenDriveMeshBuilder::ClassifyLaneType(TEXT("shoulder")) == EOpenDriveMeshMaterialSlot::Asphalt, "ClassifyLaneType: unrecognised type falls back to Asphalt");
+		Check(FOpenDriveMeshBuilder::ClassifyLaneType(TEXT("Sidewalk")) == EOpenDriveMeshMaterialSlot::Sidewalk, "ClassifyLaneType: sidewalk is case-insensitive");
+		Check(FOpenDriveMeshBuilder::ClassifyLaneType(TEXT("median")) == EOpenDriveMeshMaterialSlot::GrassMedian, "ClassifyLaneType: median -> GrassMedian");
+
+		FOpenDriveMap MeshMap;
+		const FString RoadId = FOpenDriveModelEdit::AddStraightRoad(MeshMap, TEXT("MeshRoad"), 0.0, 0.0, 0.0, 50.0);
+		const FOpenDriveRoad* Road = MeshMap.FindRoad(RoadId);
+		Check(Road != nullptr, "mesh test: find road");
+		if (Road)
+		{
+			FOpenDriveMeshBuildParams Params;
+			const FOpenDriveRoadMesh Mesh = FOpenDriveMeshBuilder::BuildRoad(MeshMap, *Road, Params);
+			Check(Mesh.RoadId == RoadId, "BuildRoad: mesh carries the road id");
+			Check(!Mesh.IsEmpty(), "BuildRoad: mesh is non-empty");
+
+			const FOpenDriveMeshSection& Asphalt = Mesh.Sections[(int32)EOpenDriveMeshMaterialSlot::Asphalt];
+			const FOpenDriveMeshSection& Marking = Mesh.Sections[(int32)EOpenDriveMeshMaterialSlot::RoadMarking];
+			const FOpenDriveMeshSection& Curb = Mesh.Sections[(int32)EOpenDriveMeshMaterialSlot::Curb];
+			const FOpenDriveMeshSection& Sidewalk = Mesh.Sections[(int32)EOpenDriveMeshMaterialSlot::Sidewalk];
+			const FOpenDriveMeshSection& Grass = Mesh.Sections[(int32)EOpenDriveMeshMaterialSlot::GrassMedian];
+
+			Check(!Asphalt.IsEmpty(), "flat straight road: Asphalt section is non-empty (two driving lanes)");
+			Check(!Marking.IsEmpty(), "flat straight road: RoadMarking section is non-empty (default lane marks)");
+			Check(Curb.IsEmpty(), "flat straight road: Curb section is empty (no curb-type marks)");
+			Check(Sidewalk.IsEmpty(), "flat straight road: Sidewalk section is empty (no sidewalk lanes)");
+			Check(Grass.IsEmpty(), "flat straight road: GrassMedian section is empty (no median lanes)");
+
+			Check(Asphalt.Indices.Num() % 3 == 0, "Asphalt index count is a multiple of 3");
+			Check(Asphalt.Positions.Num() == Asphalt.Normals.Num() && Asphalt.Positions.Num() == Asphalt.UVs.Num(), "Asphalt position/normal/UV counts match");
+			for (const int32 Index : Asphalt.Indices)
+			{
+				Check(Asphalt.Positions.IsValidIndex(Index), "Asphalt index is within range");
+			}
+
+			// Two 3.5 m driving lanes over 50 m, dead flat (no elevation/superelevation/shape): exact area.
+			CheckNear(SectionAreaCm2(Asphalt), 2.0 * 3.5 * 50.0 * 100.0 * 100.0, 1.0, "Asphalt area matches 2 lanes * 3.5m * 50m");
+			// Three default marks (centre broken + two side solid), all at the default 0.12 m width, no dashing.
+			CheckNear(SectionAreaCm2(Marking), 3.0 * 0.12 * 50.0 * 100.0 * 100.0, 1.0, "RoadMarking area matches 3 marks * 0.12m * 50m");
+
+			// Flat, unbanked road: every generated normal should point straight up.
+			bool bAllNormalsUp = true;
+			for (const FVector& N : Asphalt.Normals)
+			{
+				if (FMath::Abs(N.X) > 1e-6 || FMath::Abs(N.Y) > 1e-6 || N.Z < 1.0 - 1e-6)
+				{
+					bAllNormalsUp = false;
+					break;
+				}
+			}
+			Check(bAllNormalsUp, "Asphalt normals point straight up on a flat, unbanked road");
+		}
+
+		// A sidewalk lane with a curb-type road mark at its inner border.
+		FOpenDriveMap CurbMap;
+		const FString CurbRoadId = FOpenDriveModelEdit::AddStraightRoad(CurbMap, TEXT("CurbRoad"), 0.0, 0.0, 0.0, 40.0);
+		FOpenDriveRoad* CurbRoad = CurbMap.FindRoadMutable(CurbRoadId);
+		Check(CurbRoad != nullptr, "curb test: find road");
+		if (CurbRoad && CurbRoad->LaneSections.Num() > 0)
+		{
+			FOpenDriveLane Sidewalk;
+			Sidewalk.Id = 2;
+			Sidewalk.Type = TEXT("sidewalk");
+			Sidewalk.Widths.Add(FOpenDriveCubic{ 0.0, 2.0, 0.0, 0.0, 0.0 });
+			Sidewalk.RoadMarks.Add(FOpenDriveRoadMarkEntry{ 0.0, EOpenDriveRoadMarkType::Curb, EOpenDriveRoadMarkWeight::Standard, EOpenDriveRoadMarkColor::Standard, -1.0, EOpenDriveLaneChange::None, 0.0 });
+			CurbRoad->LaneSections[0].Lanes.Add(Sidewalk);
+			CurbRoad->LaneSections[0].Lanes.Sort([](const FOpenDriveLane& A, const FOpenDriveLane& B) { return A.Id < B.Id; });
+
+			const FOpenDriveMeshBuildParams Params;
+			const FOpenDriveRoadMesh Mesh = FOpenDriveMeshBuilder::BuildRoad(CurbMap, *CurbRoad, Params);
+			const FOpenDriveMeshSection& Sidewalk2 = Mesh.Sections[(int32)EOpenDriveMeshMaterialSlot::Sidewalk];
+			const FOpenDriveMeshSection& Curb2 = Mesh.Sections[(int32)EOpenDriveMeshMaterialSlot::Curb];
+			Check(!Sidewalk2.IsEmpty(), "sidewalk lane produces Sidewalk section geometry");
+			Check(!Curb2.IsEmpty(), "curb-type road mark produces Curb section geometry");
+			if (!Curb2.IsEmpty())
+			{
+				double MinZ = Curb2.Positions[0].Z;
+				for (const FVector& P : Curb2.Positions)
+				{
+					MinZ = FMath::Min(MinZ, P.Z);
+				}
+				CheckNear(MinZ, Params.CurbHeight * 100.0, 1e-3, "curb geometry is lifted by the default curb height");
+			}
+		}
+
+		// BuildMap collects every road that produces geometry.
+		const TArray<FOpenDriveRoadMesh> AllMeshes = FOpenDriveMeshBuilder::BuildMap(MeshMap);
+		Check(AllMeshes.Num() == 1, "BuildMap returns one mesh for the one-road map");
 	}
 
 	// --- Profile <-> points round trip -----------------------------------------------------------

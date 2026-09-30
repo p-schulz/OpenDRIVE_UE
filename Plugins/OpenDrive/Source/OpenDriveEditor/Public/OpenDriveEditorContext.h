@@ -59,6 +59,15 @@ public:
 	UOpenDriveEditorSettings* GetSettings() const { return Settings.Get(); }
 	FTransform ResolveOrigin() const;
 
+	// --- Mesh generation ---------------------------------------------------------------------
+	/** Spawns/updates one AOpenDriveRoadMeshActor per road in the working copy inside World (live preview),
+	 *  placed at ResolveOrigin(); destroys actors left over from roads that no longer exist. */
+	void GenerateRoadMeshes(class UWorld* World);
+	/** Bakes the selected road to a new UStaticMesh asset alongside the current OpenDRIVE asset (see
+	 *  FOpenDriveMeshBaker), reusing its live preview actor's per-slot materials if one exists in World.
+	 *  Returns nullptr if there is no selected road, no asset, or the road has no geometry. */
+	class UStaticMesh* BakeSelectedRoadToStaticMesh(class UWorld* World);
+
 	// --- Events ------------------------------------------------------------------------------
 	FSimpleMulticastDelegate OnAssetChanged;
 	FSimpleMulticastDelegate OnStructureChanged;

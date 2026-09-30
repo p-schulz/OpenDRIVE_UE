@@ -6,12 +6,17 @@
 #include "OpenDriveEditorModule.h"
 #include "AssetRegistry/AssetData.h"
 #include "DesktopPlatformModule.h"
+#include "Editor.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/World.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Framework/Notifications/NotificationManager.h"
 #include "IDesktopPlatform.h"
 #include "IDetailsView.h"
 #include "Misc/Paths.h"
 #include "PropertyCustomizationHelpers.h"
 #include "PropertyEditorModule.h"
+#include "Widgets/Notifications/SNotificationList.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SExpandableArea.h"
@@ -132,6 +137,16 @@ void SOpenDriveModePanel::Construct(const FArguments& InArgs, FOpenDriveEditorCo
 					]
 					+ SWrapBox::Slot().Padding(0.f, 0.f, 4.f, 4.f)
 					[
+						MakeButton(LOCTEXT("GenerateMeshes", "Generate Meshes"), LOCTEXT("GenerateMeshesTip", "Build/update a live preview mesh (AOpenDriveRoadMeshActor) for every road in the level"),
+							[this]() { return OnGenerateMeshes(); }, HasAsset)
+					]
+					+ SWrapBox::Slot().Padding(0.f, 0.f, 4.f, 4.f)
+					[
+						MakeButton(LOCTEXT("BakeSelected", "Bake Selected Road"), LOCTEXT("BakeSelectedTip", "Bake the selected road's generated mesh to a new UStaticMesh asset, with complex-as-simple collision"),
+							[this]() { return OnBakeSelectedRoad(); }, [Ctx]() { return Ctx->GetSelectedRoad() != nullptr; })
+					]
+					+ SWrapBox::Slot().Padding(0.f, 0.f, 4.f, 4.f)
+					[
 						MakeButton(LOCTEXT("Apply", "Apply"), LOCTEXT("ApplyTip", "Write unapplied edits to the road network asset"),
 							[Ctx]() { Ctx->Apply(); return FReply::Handled(); }, [Ctx]() { return Ctx->GetAsset() && Ctx->IsDirty(); })
 					]
@@ -193,6 +208,29 @@ FReply SOpenDriveModePanel::OnImport()
 			Context->ImportFile(File);
 		}
 	}
+	return FReply::Handled();
+}
+
+FReply SOpenDriveModePanel::OnGenerateMeshes()
+{
+	if (UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr)
+	{
+		Context->GenerateRoadMeshes(World);
+	}
+	return FReply::Handled();
+}
+
+FReply SOpenDriveModePanel::OnBakeSelectedRoad()
+{
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	UStaticMesh* Baked = Context->BakeSelectedRoadToStaticMesh(World);
+
+	FNotificationInfo Info(Baked
+		? FText::Format(LOCTEXT("BakeSucceeded", "Baked road '{0}' to {1}"), FText::FromString(Context->GetSelectedRoadId()), FText::FromString(Baked->GetPathName()))
+		: LOCTEXT("BakeFailed", "Bake failed: no road selected, no asset, or the road has no geometry to mesh."));
+	Info.ExpireDuration = 5.0f;
+	FSlateNotificationManager::Get().AddNotification(Info);
+
 	return FReply::Handled();
 }
 

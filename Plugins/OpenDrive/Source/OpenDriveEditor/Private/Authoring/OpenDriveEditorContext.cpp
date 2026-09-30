@@ -1,11 +1,15 @@
 #include "OpenDriveEditorContext.h"
 #include "Authoring/OpenDriveEditorSettings.h"
+#include "Authoring/OpenDriveMeshBaker.h"
 #include "Factories/OpenDriveFactories.h"
 #include "OpenDrive/OpenDriveAsset.h"
+#include "OpenDrive/OpenDriveRoadMeshActor.h"
 #include "OpenDriveModelEdit.h"
 #include "AssetToolsModule.h"
 #include "AssetImportTask.h"
 #include "DesktopPlatformModule.h"
+#include "EngineUtils.h"
+#include "Engine/World.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/Actor.h"
 #include "IAssetTools.h"
@@ -255,6 +259,90 @@ FTransform FOpenDriveEditorContext::ResolveOrigin() const
 		return T;
 	}
 	return FTransform::Identity;
+}
+
+// ------------------------------------------------------------------------------------------------
+// Mesh generation
+// ------------------------------------------------------------------------------------------------
+
+void FOpenDriveEditorContext::GenerateRoadMeshes(UWorld* World)
+{
+	if (!World)
+	{
+		return;
+	}
+
+	TMap<FString, AOpenDriveRoadMeshActor*> ExistingByRoadId;
+	for (TActorIterator<AOpenDriveRoadMeshActor> It(World); It; ++It)
+	{
+		if (!It->SourceRoadId.IsEmpty())
+		{
+			ExistingByRoadId.Add(It->SourceRoadId, *It);
+		}
+	}
+
+	const FTransform Origin = ResolveOrigin();
+	TSet<FString> LiveRoadIds;
+	for (const FOpenDriveRoad& Road : Working.GetRoads())
+	{
+		LiveRoadIds.Add(Road.Id);
+
+		AOpenDriveRoadMeshActor* Actor = nullptr;
+		if (AOpenDriveRoadMeshActor** Found = ExistingByRoadId.Find(Road.Id))
+		{
+			Actor = *Found;
+		}
+		else
+		{
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.Name = MakeUniqueObjectName(World->GetCurrentLevel(), AOpenDriveRoadMeshActor::StaticClass(), FName(*FString::Printf(TEXT("OpenDriveRoadMesh_%s"), *Road.Id)));
+			Actor = World->SpawnActor<AOpenDriveRoadMeshActor>(SpawnParams);
+		}
+		if (!Actor)
+		{
+			continue;
+		}
+		Actor->SetActorTransform(Origin);
+		Actor->BuildFromRoad(Working, Road);
+	}
+
+	for (const TPair<FString, AOpenDriveRoadMeshActor*>& Pair : ExistingByRoadId)
+	{
+		if (!LiveRoadIds.Contains(Pair.Key) && IsValid(Pair.Value))
+		{
+			Pair.Value->Destroy();
+		}
+	}
+}
+
+UStaticMesh* FOpenDriveEditorContext::BakeSelectedRoadToStaticMesh(UWorld* World)
+{
+	UOpenDriveAsset* A = Asset.Get();
+	const FOpenDriveRoad* Road = GetSelectedRoad();
+	if (!A || !Road)
+	{
+		return nullptr;
+	}
+
+	TArray<UMaterialInterface*> SlotMaterials;
+	if (World)
+	{
+		for (TActorIterator<AOpenDriveRoadMeshActor> It(World); It; ++It)
+		{
+			if (It->SourceRoadId == Road->Id)
+			{
+				SlotMaterials.Reserve(It->SlotMaterials.Num());
+				for (const TObjectPtr<UMaterialInterface>& Mat : It->SlotMaterials)
+				{
+					SlotMaterials.Add(Mat.Get());
+				}
+				break;
+			}
+		}
+	}
+
+	const FString PackagePath = FPackageName::GetLongPackagePath(A->GetOutermost()->GetName()) / TEXT("GeneratedMeshes");
+	return FOpenDriveMeshBaker::BakeRoadToStaticMesh(Working, *Road, PackagePath, SlotMaterials);
 }
 
 #undef LOCTEXT_NAMESPACE

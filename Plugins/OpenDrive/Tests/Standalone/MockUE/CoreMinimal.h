@@ -176,7 +176,11 @@ struct FVector {
 	FVector operator*(double s) const { return FVector(X * s, Y * s, Z * s); }
 	double Size() const { return std::sqrt(X * X + Y * Y + Z * Z); }
 	double SizeSquared2D() const { return X * X + Y * Y; }
+	FVector GetSafeNormal(double Tolerance = 1e-8) const { const double L = Size(); return L > Tolerance ? FVector(X / L, Y / L, Z / L) : FVector(0, 0, 0); }
+	static FVector CrossProduct(const FVector& A, const FVector& B) { return FVector(A.Y * B.Z - A.Z * B.Y, A.Z * B.X - A.X * B.Z, A.X * B.Y - A.Y * B.X); }
+	static double DotProduct(const FVector& A, const FVector& B) { return A.X * B.X + A.Y * B.Y + A.Z * B.Z; }
 	static FVector OneVector;
+	static FVector UpVector;
 };
 struct FVector2D {
 	double X = 0, Y = 0;

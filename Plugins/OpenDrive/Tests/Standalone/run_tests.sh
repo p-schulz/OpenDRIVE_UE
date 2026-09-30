@@ -11,6 +11,6 @@ ${CXX:-g++} -std=c++20 -Wall -Wextra -Wno-unused-parameter -Wno-misleading-inden
   -I "$HERE/MockUE" -I "$SRC/Public" -I "$SRC/Private" "$HERE/main.cpp" \
   "$SRC/Private/OpenDriveModule.cpp" "$SRC/Private/OpenDrive/OpenDriveMap.cpp" \
   "$SRC/Private/OpenDrive/OpenDriveAsset.cpp" "$SRC/Private/OpenDriveWriter.cpp" \
-  "$SRC/Private/OpenDriveModelEdit.cpp" -o "$OUT"
+  "$SRC/Private/OpenDriveModelEdit.cpp" "$SRC/Private/OpenDriveMeshBuilder.cpp" -o "$OUT"
 
 "$OUT"
