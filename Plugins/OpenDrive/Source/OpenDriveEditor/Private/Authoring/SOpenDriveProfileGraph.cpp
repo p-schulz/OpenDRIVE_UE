@@ -1,7 +1,6 @@
 #include "Authoring/SOpenDriveProfileGraph.h"
 #include "Brushes/SlateColorBrush.h"
 #include "InputCoreTypes.h"
-#include "Layout/SlateLayoutTransform.h"
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Input/SButton.h"
