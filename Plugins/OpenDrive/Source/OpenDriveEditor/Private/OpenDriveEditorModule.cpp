@@ -3,6 +3,7 @@
 #include "Authoring/OpenDriveMapVisualizer.h"
 #include "Authoring/SOpenDriveProfileTab.h"
 #include "Authoring/SOpenDriveRoadListTab.h"
+#include "Authoring/SOpenDriveSignalsTab.h"
 #include "Editor.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Docking/TabManager.h"
@@ -18,6 +19,7 @@ const FName FOpenDriveEditorModule::ElevationTabId(TEXT("OpenDriveElevation"));
 const FName FOpenDriveEditorModule::SuperelevationTabId(TEXT("OpenDriveSuperelevation"));
 const FName FOpenDriveEditorModule::LaneOffsetTabId(TEXT("OpenDriveLaneOffset"));
 const FName FOpenDriveEditorModule::CrossfallTabId(TEXT("OpenDriveCrossfall"));
+const FName FOpenDriveEditorModule::SignalsTabId(TEXT("OpenDriveSignals"));
 
 FOpenDriveEditorModule& FOpenDriveEditorModule::Get()
 {
@@ -61,6 +63,11 @@ void FOpenDriveEditorModule::StartupModule()
 		.SetDisplayName(LOCTEXT("CrossfallTabTitle", "OpenDRIVE Crossfall"))
 		.SetTooltipText(LOCTEXT("CrossfallTabTip", "Edit the crossfall (drainage banking) profile of the selected road"))
 		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory());
+
+	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(SignalsTabId, FOnSpawnTab::CreateRaw(this, &FOpenDriveEditorModule::SpawnSignalsTab))
+		.SetDisplayName(LOCTEXT("SignalsTabTitle", "OpenDRIVE Signals"))
+		.SetTooltipText(LOCTEXT("SignalsTabTip", "Add and edit signs and traffic lights on the selected road"))
+		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory());
 }
 
 void FOpenDriveEditorModule::ShutdownModule()
@@ -72,6 +79,7 @@ void FOpenDriveEditorModule::ShutdownModule()
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(SuperelevationTabId);
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(LaneOffsetTabId);
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(CrossfallTabId);
+		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(SignalsTabId);
 	}
 	Visualizer.Reset();
 	Context.Reset();
@@ -127,6 +135,16 @@ TSharedRef<SDockTab> FOpenDriveEditorModule::SpawnCrossfallTab(const FSpawnTabAr
 		];
 }
 
+TSharedRef<SDockTab> FOpenDriveEditorModule::SpawnSignalsTab(const FSpawnTabArgs& Args)
+{
+	return SNew(SDockTab)
+		.TabRole(ETabRole::NomadTab)
+		.Label(LOCTEXT("SignalsTabLabel", "OpenDRIVE Signals"))
+		[
+			SNew(SOpenDriveSignalsTab, *Context)
+		];
+}
+
 void FOpenDriveEditorModule::OpenRoadListTab() const
 {
 	FGlobalTabmanager::Get()->TryInvokeTab(RoadListTabId);
@@ -150,6 +168,11 @@ void FOpenDriveEditorModule::OpenLaneOffsetTab() const
 void FOpenDriveEditorModule::OpenCrossfallTab() const
 {
 	FGlobalTabmanager::Get()->TryInvokeTab(CrossfallTabId);
+}
+
+void FOpenDriveEditorModule::OpenSignalsTab() const
+{
+	FGlobalTabmanager::Get()->TryInvokeTab(SignalsTabId);
 }
 
 IMPLEMENT_MODULE(FOpenDriveEditorModule, OpenDriveEditor)

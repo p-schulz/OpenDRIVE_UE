@@ -99,6 +99,19 @@ public:
 	static FString AddJunctionConnection(FOpenDriveMap& Map, const FString& JunctionId, const FString& IncomingRoadId, bool bAtIncomingEnd, const FString& ConnectingRoadId, EOpenDriveContactPoint Contact);
 	static bool RemoveJunctionConnection(FOpenDriveMap& Map, const FString& JunctionId, const FString& ConnectionId);
 
+	// --- Signals -------------------------------------------------------------------------------
+	enum class ESignalPreset : uint8 { StopSign, YieldSign, SpeedLimit, TrafficLight };
+
+	/**
+	 * Adds a signal at (S, T) using a preset that fills in the ASAM/Vienna Convention codes the spec's own
+	 * examples use, so the caller doesn't need to know them: StopSign/YieldSign use country "DE" (206/205);
+	 * SpeedLimit uses "DE" 274 with SpeedLimitKmh as its value; TrafficLight uses the generic country
+	 * "OpenDRIVE" type 1000001 (a standard 3-aspect signal) and is marked dynamic. Returns the new signal's Id.
+	 */
+	static FString AddSignal(FOpenDriveRoad& Road, ESignalPreset Preset, double S, double T, double SpeedLimitKmh = 50.0);
+	static bool RemoveSignal(FOpenDriveRoad& Road, const FString& SignalId);
+	static bool SetSignalPose(FOpenDriveRoad& Road, const FString& SignalId, double S, double T, double ZOffset, double HOffsetRad);
+
 	// --- Profile <-> editable point conversion (piecewise-linear: each stored segment has C = D = 0) ----
 	/** One point per stored segment start, plus a trailing point at RoadLength holding the last segment's value. */
 	static TArray<FVector2D> ProfileToPoints(const TArray<FOpenDriveCubic>& Profile, double RoadLength);

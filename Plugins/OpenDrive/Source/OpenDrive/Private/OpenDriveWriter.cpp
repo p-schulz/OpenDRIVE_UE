@@ -247,6 +247,26 @@ FString FOpenDriveWriter::Write(const FOpenDriveMap& Map)
 		}
 		Out += TEXT("\t\t</lanes>\n");
 
+		if (Road.Signals.Num() > 0)
+		{
+			Out += TEXT("\t\t<signals>\n");
+			for (const FOpenDriveSignal& Sig : Road.Signals)
+			{
+				Out += FString::Printf(TEXT("\t\t\t<signal s=\"%s\" t=\"%s\" id=\"%s\" name=\"%s\" dynamic=\"%s\" orientation=\"%s\" zOffset=\"%s\" country=\"%s\" type=\"%s\" subtype=\"%s\" value=\"%s\" unit=\"%s\" height=\"%s\" width=\"%s\" hOffset=\"%s\" pitch=\"%s\" roll=\"%s\""),
+					*D(Sig.S), *D(Sig.T), *Esc(Sig.Id), *Esc(Sig.Name), Sig.bDynamic ? TEXT("yes") : TEXT("no"), *OpenDriveSignalOrientationToString(Sig.Orientation),
+					*D(Sig.ZOffset), *Esc(Sig.Country), *Esc(Sig.Type), *Esc(Sig.Subtype), *D(Sig.Value), *Esc(Sig.Unit), *D(Sig.Height), *D(Sig.Width), *D(Sig.HOffset), *D(Sig.Pitch), *D(Sig.Roll));
+				if (Sig.Text.IsEmpty())
+				{
+					Out += TEXT("/>\n");
+				}
+				else
+				{
+					Out += FString::Printf(TEXT(" text=\"%s\"/>\n"), *Esc(Sig.Text));
+				}
+			}
+			Out += TEXT("\t\t</signals>\n");
+		}
+
 		Out += TEXT("\t</road>\n");
 	}
 
@@ -265,6 +285,17 @@ FString FOpenDriveWriter::Write(const FOpenDriveMap& Map)
 			Out += TEXT("\t\t</connection>\n");
 		}
 		Out += TEXT("\t</junction>\n");
+	}
+
+	for (const FOpenDriveController& Controller : Map.GetControllers())
+	{
+		Out += FString::Printf(TEXT("\t<controller id=\"%s\" name=\"%s\">\n"), *Esc(Controller.Id), *Esc(Controller.Name));
+		for (const FOpenDriveControllerEntry& Entry : Controller.Controls)
+		{
+			const FString TypeAttr = Entry.Type.IsEmpty() ? FString() : FString::Printf(TEXT(" type=\"%s\""), *Esc(Entry.Type));
+			Out += FString::Printf(TEXT("\t\t<control signalId=\"%s\"%s/>\n"), *Esc(Entry.SignalId), *TypeAttr);
+		}
+		Out += TEXT("\t</controller>\n");
 	}
 
 	Out += TEXT("</OpenDRIVE>\n");

@@ -112,6 +112,11 @@ void SOpenDriveModePanel::Construct(const FArguments& InArgs, FOpenDriveEditorCo
 					]
 					+ SWrapBox::Slot().Padding(0.f, 0.f, 4.f, 4.f)
 					[
+						MakeButton(LOCTEXT("Signals", "Signals"), LOCTEXT("SignalsTip", "Open the dockable signs/traffic lights editor"),
+							[]() { FOpenDriveEditorModule::Get().OpenSignalsTab(); return FReply::Handled(); }, Always)
+					]
+					+ SWrapBox::Slot().Padding(0.f, 0.f, 4.f, 4.f)
+					[
 						MakeButton(LOCTEXT("Apply", "Apply"), LOCTEXT("ApplyTip", "Write unapplied edits to the road network asset"),
 							[Ctx]() { Ctx->Apply(); return FReply::Handled(); }, [Ctx]() { return Ctx->GetAsset() && Ctx->IsDirty(); })
 					]

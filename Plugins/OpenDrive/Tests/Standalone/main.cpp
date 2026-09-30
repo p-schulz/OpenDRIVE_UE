@@ -113,6 +113,74 @@ namespace
 			(FString("right lane roadmark weight (") + Tag + ")").S.c_str());
 	}
 
+	const char* SignalXodr()
+	{
+		return R"XODR(<?xml version="1.0"?>
+<OpenDRIVE>
+	<header name="SignalTest" />
+	<road name="WithSignals" length="60.0" id="9" junction="-1">
+		<planView>
+			<geometry s="0" x="0" y="0" hdg="0" length="60">
+				<line/>
+			</geometry>
+		</planView>
+		<lanes>
+			<laneSection s="0">
+				<left>
+					<lane id="1" type="driving" level="false">
+						<width sOffset="0" a="3.5" b="0" c="0" d="0"/>
+					</lane>
+				</left>
+				<center>
+					<lane id="0" type="none" level="false"/>
+				</center>
+				<right>
+					<lane id="-1" type="driving" level="false">
+						<width sOffset="0" a="3.5" b="0" c="0" d="0"/>
+					</lane>
+				</right>
+			</laneSection>
+		</lanes>
+		<signals>
+			<signal s="30" t="-4.5" id="1" name="Stop" dynamic="no" orientation="+" zOffset="0" country="DE" type="206" subtype="" value="0" unit="" height="2" width="0.6" hOffset="0" pitch="0" roll="0"/>
+			<signal s="10" t="-4.5" id="2" name="Light" dynamic="yes" orientation="+" zOffset="0" country="OpenDRIVE" type="1000001" subtype="1" value="0" unit="" height="3" width="0.3" hOffset="0" pitch="0" roll="0"/>
+		</signals>
+	</road>
+	<controller id="1" name="MainLight">
+		<control signalId="2" type=""/>
+	</controller>
+</OpenDRIVE>
+)XODR";
+	}
+
+	void CheckSignals(const FOpenDriveMap& SigMap, const char* Tag)
+	{
+		const FOpenDriveRoad* Road = SigMap.FindRoad(FString("9"));
+		if (!Road)
+		{
+			Check(false, (FString("find road 9 (") + Tag + ")").S.c_str());
+			return;
+		}
+		Check(Road->Signals.Num() == 2, (FString("two signals parsed (") + Tag + ")").S.c_str());
+		if (Road->Signals.Num() == 2)
+		{
+			// Sorted by S ascending: id 2 (s=10) then id 1 (s=30).
+			Check(Road->Signals[0].Id == FString("2") && Road->Signals[0].bDynamic && Road->Signals[0].Type == FString("1000001"),
+				(FString("traffic light signal fields (") + Tag + ")").S.c_str());
+			Check(Road->Signals[1].Id == FString("1") && !Road->Signals[1].bDynamic && Road->Signals[1].Country == FString("DE") && Road->Signals[1].Type == FString("206"),
+				(FString("stop sign fields (") + Tag + ")").S.c_str());
+			CheckNear(Road->Signals[1].T, -4.5, 1e-9, (FString("stop sign t (") + Tag + ")").S.c_str());
+		}
+		Check(SigMap.GetControllers().Num() == 1, (FString("one controller parsed (") + Tag + ")").S.c_str());
+		if (SigMap.GetControllers().Num() == 1)
+		{
+			const FOpenDriveController& Ctrl = SigMap.GetControllers()[0];
+			Check(Ctrl.Id == FString("1") && Ctrl.Controls.Num() == 1 && Ctrl.Controls[0].SignalId == FString("2"),
+				(FString("controller fields (") + Tag + ")").S.c_str());
+		}
+		Check(SigMap.FindController(FString("1")) != nullptr, (FString("FindController (") + Tag + ")").S.c_str());
+	}
+
 	const char* CrossfallXodr()
 	{
 		return R"XODR(<?xml version="1.0"?>
@@ -381,6 +449,50 @@ int main()
 		else
 		{
 			Check(false, "find road 1 for lane edits");
+		}
+	}
+
+	// --- Signals & controllers: parse + writer round trip ------------------------------------------
+	{
+		FOpenDriveMap SigMap;
+		FString SigErr;
+		Check(SigMap.LoadFromString(SignalXodr(), SigErr), "parse signal xodr");
+		CheckSignals(SigMap, "parsed");
+
+		const FString SigWritten = FOpenDriveWriter::Write(SigMap);
+		Check(SigWritten.S.find("<signal ") != std::string::npos, "writer emits signal");
+		Check(SigWritten.S.find("<controller ") != std::string::npos, "writer emits controller");
+
+		FOpenDriveMap SigReparsed;
+		FString SigReparseErr;
+		Check(SigReparsed.LoadFromString(SigWritten, SigReparseErr), "reparse signal xodr");
+		CheckSignals(SigReparsed, "round trip");
+
+		// --- Signal model-edit helpers ---------------------------------------------------------
+		if (FOpenDriveRoad* Road = SigMap.FindRoadMutable(FString("9")))
+		{
+			const FString NewId = FOpenDriveModelEdit::AddSignal(*Road, FOpenDriveModelEdit::ESignalPreset::SpeedLimit, 45.0, -4.5, 80.0);
+			Check(!NewId.IsEmpty() && NewId != FString("1") && NewId != FString("2"), "AddSignal returns a fresh id");
+			const FOpenDriveSignal* NewSig = Road->Signals.FindByPredicate([&](const FOpenDriveSignal& S) { return S.Id == NewId; });
+			Check(NewSig != nullptr && NewSig->Type == FString("274"), "AddSignal: speed limit preset type");
+			CheckNear(NewSig ? NewSig->Value : -1.0, 80.0, 1e-9, "AddSignal: speed limit value");
+
+			Check(FOpenDriveModelEdit::SetSignalPose(*Road, NewId, 20.0, -5.0, 0.1, 0.2), "SetSignalPose succeeds");
+			const FOpenDriveSignal* Moved = Road->Signals.FindByPredicate([&](const FOpenDriveSignal& S) { return S.Id == NewId; });
+			Check(Moved != nullptr, "moved signal still findable");
+			if (Moved)
+			{
+				CheckNear(Moved->S, 20.0, 1e-9, "SetSignalPose: S");
+				CheckNear(Moved->T, -5.0, 1e-9, "SetSignalPose: T");
+			}
+
+			Check(FOpenDriveModelEdit::RemoveSignal(*Road, NewId), "RemoveSignal succeeds");
+			Check(Road->Signals.FindByPredicate([&](const FOpenDriveSignal& S) { return S.Id == NewId; }) == nullptr, "RemoveSignal: signal gone");
+			Check(Road->Signals.Num() == 2, "RemoveSignal: back to original two signals");
+		}
+		else
+		{
+			Check(false, "find road 9 for signal model-edit checks");
 		}
 	}
 

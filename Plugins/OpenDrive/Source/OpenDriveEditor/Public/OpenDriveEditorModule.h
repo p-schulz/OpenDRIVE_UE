@@ -17,6 +17,7 @@ public:
 	static const FName SuperelevationTabId;
 	static const FName LaneOffsetTabId;
 	static const FName CrossfallTabId;
+	static const FName SignalsTabId;
 
 	static FOpenDriveEditorModule& Get();
 
@@ -32,6 +33,7 @@ public:
 	void OpenSuperelevationTab() const;
 	void OpenLaneOffsetTab() const;
 	void OpenCrossfallTab() const;
+	void OpenSignalsTab() const;
 
 private:
 	TSharedRef<SDockTab> SpawnRoadListTab(const FSpawnTabArgs& Args);
@@ -39,6 +41,7 @@ private:
 	TSharedRef<SDockTab> SpawnSuperelevationTab(const FSpawnTabArgs& Args);
 	TSharedRef<SDockTab> SpawnLaneOffsetTab(const FSpawnTabArgs& Args);
 	TSharedRef<SDockTab> SpawnCrossfallTab(const FSpawnTabArgs& Args);
+	TSharedRef<SDockTab> SpawnSignalsTab(const FSpawnTabArgs& Args);
 
 	TSharedPtr<FOpenDriveEditorContext> Context;
 	TSharedPtr<FOpenDriveMapVisualizer> Visualizer;

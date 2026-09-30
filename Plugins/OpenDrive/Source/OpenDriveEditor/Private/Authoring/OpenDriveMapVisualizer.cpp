@@ -29,6 +29,21 @@ namespace
 		}
 	}
 
+	/** A rough colour per signal so a road's signs/lights are distinguishable at a glance. Real
+	 *  type/subtype meaning (e.g. which physical sign a code corresponds to) is left to Phase 7's mesh
+	 *  generation and any content the project assigns; this is a debug-view approximation only. */
+	FColor SignalDebugColor(const FOpenDriveSignal& Sig)
+	{
+		if (Sig.bDynamic)
+		{
+			return FColor(230, 40, 40); // traffic light: default to the "stop" aspect
+		}
+		if (Sig.Type == TEXT("206")) { return FColor(220, 50, 50); } // stop
+		if (Sig.Type == TEXT("205")) { return FColor(230, 200, 40); } // yield
+		if (Sig.Type == TEXT("274")) { return FColor(240, 240, 240); } // speed limit
+		return FColor(200, 160, 60);
+	}
+
 	/** Approximate dash pattern for "broken" marks: ~3 m painted, ~3 m gap. Every other type (aside from
 	 *  None) is drawn as a continuous line -- distinguishing double lines/botts dots/curbs is Phase 7's job. */
 	bool ShouldDrawMarkSegment(EOpenDriveRoadMarkType Type, double SegmentMidS)
@@ -183,6 +198,24 @@ void FOpenDriveMapVisualizer::Rebuild(FOpenDriveEditorContext& Context)
 			const double S = 0.5 * Road.Length;
 			Labels.Add({ ToWorld(Map.EvaluatePose(Road, S, Map.GetLaneOffset(Road, S)), 30.0),
 				FString::Printf(TEXT("road %s%s"), *Road.Id, Road.IsJunctionRoad() ? TEXT(" (junction)") : TEXT("")), RoadRefColor });
+		}
+
+		if (Opt.bDrawSignals)
+		{
+			for (const FOpenDriveSignal& Sig : Road.Signals)
+			{
+				FOpenDrivePose Pose = Map.EvaluatePose(Road, Sig.S, Sig.T);
+				Pose.Z += Sig.ZOffset;
+				const FVector Base = ToWorld(Pose);
+				const double PoleHeightCm = FMath::Max(50.0, Sig.Height * 100.0);
+				const FVector Top = Base + FVector(0, 0, PoleHeightCm);
+				const FColor Color = SignalDebugColor(Sig);
+				Lines.Add({ Base, Top, Color, Thickness * 1.25f });
+				// A small horizontal marker at the top so the pole isn't just a bare vertical line.
+				const FVector Side = Origin.TransformVector(FVector(0, FMath::Max(15.0, Sig.Width * 50.0), 0));
+				Lines.Add({ Top - Side, Top + Side, Color, Thickness * 1.5f });
+				Labels.Add({ Top + FVector(0, 0, 15.0), FString::Printf(TEXT("%s%s"), *Sig.Name, Sig.bDynamic ? TEXT(" (dynamic)") : TEXT("")), Color });
+			}
 		}
 	}
 

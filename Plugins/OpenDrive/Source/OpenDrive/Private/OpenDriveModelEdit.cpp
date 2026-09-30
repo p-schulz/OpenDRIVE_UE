@@ -27,6 +27,19 @@ namespace
 			if (bAtBEnd) { LaneB->Successor = LaneA.Id; } else { LaneB->Predecessor = LaneA.Id; }
 		}
 	}
+
+	FString MakeUniqueSignalId(const FOpenDriveRoad& Road)
+	{
+		int32 MaxId = 0;
+		for (const FOpenDriveSignal& Sig : Road.Signals)
+		{
+			if (Sig.Id.IsNumeric())
+			{
+				MaxId = FMath::Max(MaxId, FCString::Atoi(*Sig.Id));
+			}
+		}
+		return FString::FromInt(MaxId + 1);
+	}
 }
 
 FString FOpenDriveModelEdit::MakeUniqueRoadId(const FOpenDriveMap& Map)
@@ -525,6 +538,81 @@ bool FOpenDriveModelEdit::RemoveJunctionConnection(FOpenDriveMap& Map, const FSt
 		if (J.Id == JunctionId)
 		{
 			return J.Connections.RemoveAll([&](const FOpenDriveJunctionConnection& C) { return C.Id == ConnectionId; }) > 0;
+		}
+	}
+	return false;
+}
+
+// ------------------------------------------------------------------------------------------------
+// Signals
+// ------------------------------------------------------------------------------------------------
+
+FString FOpenDriveModelEdit::AddSignal(FOpenDriveRoad& Road, ESignalPreset Preset, double S, double T, double SpeedLimitKmh)
+{
+	FOpenDriveSignal Sig;
+	Sig.Id = MakeUniqueSignalId(Road);
+	Sig.S = S;
+	Sig.T = T;
+	Sig.Orientation = EOpenDriveSignalOrientation::Plus;
+
+	switch (Preset)
+	{
+	case ESignalPreset::StopSign:
+		Sig.Name = TEXT("Stop");
+		Sig.Country = TEXT("DE");
+		Sig.Type = TEXT("206");
+		Sig.Height = 2.0;
+		Sig.Width = 0.6;
+		break;
+	case ESignalPreset::YieldSign:
+		Sig.Name = TEXT("Yield");
+		Sig.Country = TEXT("DE");
+		Sig.Type = TEXT("205");
+		Sig.Height = 2.0;
+		Sig.Width = 0.6;
+		break;
+	case ESignalPreset::SpeedLimit:
+		Sig.Name = FString::Printf(TEXT("Speed Limit %.0f"), SpeedLimitKmh);
+		Sig.Country = TEXT("DE");
+		Sig.Type = TEXT("274");
+		Sig.Value = SpeedLimitKmh;
+		Sig.Unit = TEXT("km/h");
+		Sig.Height = 2.0;
+		Sig.Width = 0.6;
+		break;
+	case ESignalPreset::TrafficLight:
+		Sig.Name = TEXT("Traffic Light");
+		Sig.Country = TEXT("OpenDRIVE");
+		Sig.Type = TEXT("1000001");
+		Sig.Subtype = TEXT("1");
+		Sig.bDynamic = true;
+		Sig.Height = 3.0;
+		Sig.Width = 0.3;
+		break;
+	}
+
+	const FString NewId = Sig.Id;
+	Road.Signals.Add(MoveTemp(Sig));
+	return NewId;
+}
+
+bool FOpenDriveModelEdit::RemoveSignal(FOpenDriveRoad& Road, const FString& SignalId)
+{
+	return Road.Signals.RemoveAll([&](const FOpenDriveSignal& S) { return S.Id == SignalId; }) > 0;
+}
+
+bool FOpenDriveModelEdit::SetSignalPose(FOpenDriveRoad& Road, const FString& SignalId, double S, double T, double ZOffset, double HOffsetRad)
+{
+	for (FOpenDriveSignal& Sig : Road.Signals)
+	{
+		if (Sig.Id == SignalId)
+		{
+			Sig.S = S;
+			Sig.T = T;
+			Sig.ZOffset = ZOffset;
+			Sig.HOffset = HOffsetRad;
+			Road.Signals.Sort([](const FOpenDriveSignal& A, const FOpenDriveSignal& B) { return A.S < B.S; });
+			return true;
 		}
 	}
 	return false;

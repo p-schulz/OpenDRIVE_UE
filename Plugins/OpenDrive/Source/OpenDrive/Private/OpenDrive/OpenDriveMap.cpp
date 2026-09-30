@@ -303,6 +303,25 @@ FString OpenDriveLaneChangeToString(EOpenDriveLaneChange Value)
 	}
 }
 
+EOpenDriveSignalOrientation ParseOpenDriveSignalOrientation(const FString& S)
+{
+	if (S == TEXT("+")) { return EOpenDriveSignalOrientation::Plus; }
+	if (S == TEXT("-")) { return EOpenDriveSignalOrientation::Minus; }
+	return EOpenDriveSignalOrientation::None;
+}
+
+FString OpenDriveSignalOrientationToString(EOpenDriveSignalOrientation Value)
+{
+	switch (Value)
+	{
+	case EOpenDriveSignalOrientation::Plus: return TEXT("+");
+	case EOpenDriveSignalOrientation::Minus: return TEXT("-");
+	case EOpenDriveSignalOrientation::None:
+	default:
+		return TEXT("none");
+	}
+}
+
 double FOpenDriveCubic::EvalPiecewise(const TArray<FOpenDriveCubic>& Entries, double AbsS)
 {
 	if (Entries.Num() == 0)
@@ -334,6 +353,7 @@ bool FOpenDriveMap::LoadFromString(const FString& Xml, FString& OutError)
 	RoadIndex.Reset();
 	Junctions.Reset();
 	JunctionIndex.Reset();
+	Controllers.Reset();
 	Name.Reset();
 
 	FXmlFile File(Xml, EConstructMethod::ConstructFromBuffer);
@@ -578,6 +598,34 @@ bool FOpenDriveMap::LoadFromString(const FString& Xml, FString& OutError)
 			}
 		}
 
+		if (const FXmlNode* Signals = ODRXml::Child(RoadNode, TEXT("signals")))
+		{
+			for (const FXmlNode* SigNode : ODRXml::Children(Signals, TEXT("signal")))
+			{
+				FOpenDriveSignal Sig;
+				Sig.Id = AttrS(SigNode, TEXT("id"));
+				Sig.Name = AttrS(SigNode, TEXT("name"));
+				Sig.S = AttrD(SigNode, TEXT("s"));
+				Sig.T = AttrD(SigNode, TEXT("t"));
+				Sig.ZOffset = AttrD(SigNode, TEXT("zOffset"));
+				Sig.bDynamic = AttrS(SigNode, TEXT("dynamic")).Equals(TEXT("yes"), ESearchCase::IgnoreCase);
+				Sig.Orientation = ParseOpenDriveSignalOrientation(AttrS(SigNode, TEXT("orientation")));
+				Sig.Country = AttrS(SigNode, TEXT("country"));
+				Sig.Type = AttrS(SigNode, TEXT("type"));
+				Sig.Subtype = AttrS(SigNode, TEXT("subtype"));
+				Sig.Value = AttrD(SigNode, TEXT("value"));
+				Sig.Unit = AttrS(SigNode, TEXT("unit"));
+				Sig.Height = AttrD(SigNode, TEXT("height"));
+				Sig.Width = AttrD(SigNode, TEXT("width"));
+				Sig.Text = AttrS(SigNode, TEXT("text"));
+				Sig.HOffset = AttrD(SigNode, TEXT("hOffset"));
+				Sig.Pitch = AttrD(SigNode, TEXT("pitch"));
+				Sig.Roll = AttrD(SigNode, TEXT("roll"));
+				Road.Signals.Add(MoveTemp(Sig));
+			}
+			Road.Signals.Sort([](const FOpenDriveSignal& A, const FOpenDriveSignal& B) { return A.S < B.S; });
+		}
+
 		if (Road.Geometry.Num() == 0)
 		{
 			UE_LOG(LogOpenDrive, Warning, TEXT("OpenDRIVE road '%s' has no geometry and is ignored."), *Road.Id);
@@ -617,6 +665,21 @@ bool FOpenDriveMap::LoadFromString(const FString& Xml, FString& OutError)
 		}
 		JunctionIndex.Add(Junction.Id, Junctions.Num());
 		Junctions.Add(MoveTemp(Junction));
+	}
+
+	for (const FXmlNode* CtrlNode : ODRXml::Children(Root, TEXT("controller")))
+	{
+		FOpenDriveController Controller;
+		Controller.Id = AttrS(CtrlNode, TEXT("id"));
+		Controller.Name = AttrS(CtrlNode, TEXT("name"));
+		for (const FXmlNode* CtrlEntry : ODRXml::Children(CtrlNode, TEXT("control")))
+		{
+			FOpenDriveControllerEntry Entry;
+			Entry.SignalId = AttrS(CtrlEntry, TEXT("signalId"));
+			Entry.Type = AttrS(CtrlEntry, TEXT("type"));
+			Controller.Controls.Add(Entry);
+		}
+		Controllers.Add(MoveTemp(Controller));
 	}
 
 	if (Roads.Num() == 0)
@@ -699,6 +762,18 @@ const FOpenDriveJunction* FOpenDriveMap::FindJunction(const FString& JunctionId)
 {
 	const int32* Idx = JunctionIndex.Find(JunctionId);
 	return Idx ? &Junctions[*Idx] : nullptr;
+}
+
+const FOpenDriveController* FOpenDriveMap::FindController(const FString& ControllerId) const
+{
+	for (const FOpenDriveController& Controller : Controllers)
+	{
+		if (Controller.Id == ControllerId)
+		{
+			return &Controller;
+		}
+	}
+	return nullptr;
 }
 
 // ------------------------------------------------------------------------------------------------

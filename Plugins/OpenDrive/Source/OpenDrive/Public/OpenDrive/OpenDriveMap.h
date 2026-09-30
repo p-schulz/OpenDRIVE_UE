@@ -295,6 +295,59 @@ struct OPENDRIVE_API FOpenDriveLaneSection
 	}
 };
 
+/** <signal orientation="+|-|none">: "+"/"-" mean the signal faces traffic travelling in the direction of
+ *  increasing/decreasing s; "none" means it applies to both directions (e.g. a speed limit gantry). */
+enum class EOpenDriveSignalOrientation : uint8 { Plus, Minus, None };
+
+OPENDRIVE_API EOpenDriveSignalOrientation ParseOpenDriveSignalOrientation(const FString& S);
+OPENDRIVE_API FString OpenDriveSignalOrientationToString(EOpenDriveSignalOrientation Value);
+
+/**
+ * <road><signals><signal>: a traffic sign or light. Type/Subtype/Country follow the ASAM/Vienna Convention
+ * codes the spec's own examples use (e.g. Country "DE", Type "206" = stop sign) -- the editor's presets
+ * (see FOpenDriveModelEdit::AddSignal) fill these in so authors don't need to know the codes themselves.
+ * Dynamic (traffic-light) state control belongs in a <controller> (FOpenDriveController), not here.
+ */
+struct OPENDRIVE_API FOpenDriveSignal
+{
+	FString Id;
+	FString Name;
+	double S = 0.0;
+	double T = 0.0;
+	double ZOffset = 0.0;
+	bool bDynamic = false;
+	EOpenDriveSignalOrientation Orientation = EOpenDriveSignalOrientation::None;
+	FString Country;
+	FString Type;
+	FString Subtype;
+	double Value = 0.0;
+	FString Unit;
+	double Height = 0.0;
+	double Width = 0.0;
+	FString Text;
+	/** Additional heading (radians) on top of the road heading + orientation flip. */
+	double HOffset = 0.0;
+	double Pitch = 0.0;
+	double Roll = 0.0;
+};
+
+/** <controller><control signalId="..."/>: one signal this controller drives (e.g. one phase of a light). */
+struct OPENDRIVE_API FOpenDriveControllerEntry
+{
+	FString SignalId;
+	FString Type;
+};
+
+/** Top-level <controller>: groups signals under shared control logic (e.g. a traffic light's phases).
+ *  Actual phase timing/state is a simulation concern (OpenSCENARIO_UE's TrafficSignalController), not
+ *  modelled here -- this only records which signals belong together. */
+struct OPENDRIVE_API FOpenDriveController
+{
+	FString Id;
+	FString Name;
+	TArray<FOpenDriveControllerEntry> Controls;
+};
+
 struct OPENDRIVE_API FOpenDriveRoad
 {
 	FString Id;
@@ -325,6 +378,8 @@ struct OPENDRIVE_API FOpenDriveRoad
 	TArray<FOpenDriveSpeedLimit> SpeedLimits;
 	/** Road category entries (absolute s); see FOpenDriveRoadTypeEntry. */
 	TArray<FOpenDriveRoadTypeEntry> Types;
+	/** Signs and traffic lights ("signals/signal"), sorted by S. */
+	TArray<FOpenDriveSignal> Signals;
 
 	// Derived at load time, used to prune spatial queries.
 	double MinX = 0.0, MinY = 0.0, MaxX = 0.0, MaxY = 0.0;
@@ -401,11 +456,14 @@ public:
 	const TArray<FOpenDriveRoad>& GetRoads() const { return Roads; }
 	TArray<FOpenDriveJunction>& GetJunctionsMutable() { return Junctions; }
 	const TArray<FOpenDriveJunction>& GetJunctions() const { return Junctions; }
+	TArray<FOpenDriveController>& GetControllersMutable() { return Controllers; }
+	const TArray<FOpenDriveController>& GetControllers() const { return Controllers; }
 	double GetTotalLength() const;
 
 	FOpenDriveRoad* FindRoadMutable(const FString& RoadId);
 	const FOpenDriveRoad* FindRoad(const FString& RoadId) const;
 	const FOpenDriveJunction* FindJunction(const FString& JunctionId) const;
+	const FOpenDriveController* FindController(const FString& ControllerId) const;
 
 	/** Rebuilds the Id -> index lookup tables and per-road spatial bounds. Call after structural edits. */
 	void RebuildIndex();
@@ -465,4 +523,5 @@ private:
 	TMap<FString, int32> RoadIndex;
 	TArray<FOpenDriveJunction> Junctions;
 	TMap<FString, int32> JunctionIndex;
+	TArray<FOpenDriveController> Controllers;
 };
