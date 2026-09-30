@@ -59,6 +59,12 @@ public:
 
 	/** Sets a constant width (metres) for LaneId across every lane section of Road. */
 	static bool SetLaneWidthConstant(FOpenDriveRoad& Road, int32 LaneId, double Width);
+	/** Sets a single, constant road mark for LaneId across every lane section of Road. */
+	static bool SetLaneRoadMarkConstant(FOpenDriveRoad& Road, int32 LaneId, const FOpenDriveRoadMarkEntry& Mark);
+	/** The road mark active at S for LaneId in Road's first lane section, or a default Solid mark if none. */
+	static FOpenDriveRoadMarkEntry GetLaneRoadMark(const FOpenDriveRoad& Road, int32 LaneId);
+	/** Every distinct lane Id present in Road's first lane section, left-to-right (descending Id). */
+	static TArray<int32> GetLaneIds(const FOpenDriveRoad& Road);
 	/** Adds a new outermost driving lane on the given side to every lane section. Returns the new lane Id. */
 	static int32 AddLane(FOpenDriveRoad& Road, bool bLeft, double Width);
 	/** Removes a lane (by Id) from every lane section. */

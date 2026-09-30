@@ -60,14 +60,18 @@ namespace
 				<left>
 					<lane id="1" type="driving" level="false">
 						<width sOffset="0" a="3.5" b="0" c="0" d="0"/>
+						<roadMark sOffset="0" type="solid" weight="standard" color="standard" laneChange="none"/>
 					</lane>
 				</left>
 				<center>
-					<lane id="0" type="none" level="false"/>
+					<lane id="0" type="none" level="false">
+						<roadMark sOffset="0" type="broken" weight="standard" color="yellow" laneChange="both"/>
+					</lane>
 				</center>
 				<right>
 					<lane id="-1" type="driving" level="false">
 						<width sOffset="0" a="3.5" b="0" c="0" d="0"/>
+						<roadMark sOffset="0" type="solid" weight="bold" color="standard" laneChange="none"/>
 					</lane>
 				</right>
 			</laneSection>
@@ -75,6 +79,38 @@ namespace
 	</road>
 </OpenDRIVE>
 )XODR";
+	}
+
+	void CheckRoadMarks(const FOpenDriveMap& RMap, const char* Tag)
+	{
+		const FOpenDriveRoad* RRoad = RMap.FindRoad(FString("1"));
+		if (!RRoad || RRoad->LaneSections.Num() == 0)
+		{
+			Check(false, (FString("find road 1 for roadmarks (") + Tag + ")").S.c_str());
+			return;
+		}
+		const FOpenDriveLaneSection& Sec = RRoad->LaneSections[0];
+
+		const FOpenDriveLane* CenterLane = Sec.FindLane(0);
+		Check(CenterLane != nullptr, (FString("center lane (id 0) is stored (") + Tag + ")").S.c_str());
+		if (CenterLane)
+		{
+			Check(CenterLane->RoadMarks.Num() == 1, (FString("center lane has one roadmark (") + Tag + ")").S.c_str());
+			if (CenterLane->RoadMarks.Num() == 1)
+			{
+				Check(CenterLane->RoadMarks[0].Type == EOpenDriveRoadMarkType::Broken, (FString("center roadmark type (") + Tag + ")").S.c_str());
+				Check(CenterLane->RoadMarks[0].Color == EOpenDriveRoadMarkColor::Yellow, (FString("center roadmark color (") + Tag + ")").S.c_str());
+				Check(CenterLane->RoadMarks[0].LaneChange == EOpenDriveLaneChange::Both, (FString("center roadmark laneChange (") + Tag + ")").S.c_str());
+			}
+		}
+
+		const FOpenDriveLane* LeftLane = Sec.FindLane(1);
+		Check(LeftLane != nullptr && LeftLane->RoadMarks.Num() == 1 && LeftLane->RoadMarks[0].Type == EOpenDriveRoadMarkType::Solid,
+			(FString("left lane roadmark (") + Tag + ")").S.c_str());
+
+		const FOpenDriveLane* RightLane = Sec.FindLane(-1);
+		Check(RightLane != nullptr && RightLane->RoadMarks.Num() == 1 && RightLane->RoadMarks[0].Weight == EOpenDriveRoadMarkWeight::Bold,
+			(FString("right lane roadmark weight (") + Tag + ")").S.c_str());
 	}
 
 	const char* CrossfallXodr()
@@ -203,6 +239,11 @@ int main()
 		Check(false, "round trip: find road 1");
 	}
 
+	// --- Road marks: parse + writer round trip --------------------------------------------------
+	CheckRoadMarks(Map, "parsed");
+	Check(Written.S.find("roadMark") != std::string::npos, "writer emits roadMark");
+	CheckRoadMarks(Reparsed, "round trip");
+
 	// --- Crossfall, shape ("road carving") and road type: parse + writer round trip ----------------
 	{
 		FOpenDriveMap CMap;
@@ -236,6 +277,11 @@ int main()
 			CheckNear(NewRoad->Length, 80.0, 1e-9, "AddStraightRoad: length");
 			Check(NewRoad->Geometry.Num() == 1 && NewRoad->Geometry[0].Type == EOpenDriveGeometryType::Line, "AddStraightRoad: single line geometry");
 			CheckNear(NewRoad->Geometry[0].X, 10.0, 1e-9, "AddStraightRoad: start X");
+
+			const TArray<int32> LaneIds = FOpenDriveModelEdit::GetLaneIds(*NewRoad);
+			Check(LaneIds.Num() == 3 && LaneIds[0] == 1 && LaneIds[1] == 0 && LaneIds[2] == -1, "AddStraightRoad: GetLaneIds is [1, 0, -1]");
+			Check(FOpenDriveModelEdit::GetLaneRoadMark(*NewRoad, 0).Type == EOpenDriveRoadMarkType::Broken, "AddStraightRoad: default centre mark is broken");
+			Check(FOpenDriveModelEdit::GetLaneRoadMark(*NewRoad, 1).Type == EOpenDriveRoadMarkType::Solid, "AddStraightRoad: default left mark is solid");
 		}
 
 		Check(FOpenDriveModelEdit::SetStraightRoadBasics(EditMap, NewId, TEXT("Renamed"), 15.0, 25.0, 0.5, 90.0), "SetStraightRoadBasics succeeds");
@@ -284,6 +330,15 @@ int main()
 
 			FOpenDriveModelEdit::SetRoadType(EditMap, *Road1, EOpenDriveRoadType::Rural, TEXT("DE"));
 			Check(Road1->Types.Num() == 1 && Road1->Types[0].Type == EOpenDriveRoadType::Rural && Road1->Types[0].Country == FString("DE"), "SetRoadType");
+
+			FOpenDriveRoadMarkEntry NewMark;
+			NewMark.Type = EOpenDriveRoadMarkType::BottsDots;
+			NewMark.Color = EOpenDriveRoadMarkColor::Blue;
+			NewMark.Weight = EOpenDriveRoadMarkWeight::Bold;
+			Check(FOpenDriveModelEdit::SetLaneRoadMarkConstant(*Road1, 1, NewMark), "SetLaneRoadMarkConstant succeeds");
+			const FOpenDriveRoadMarkEntry Readback = FOpenDriveModelEdit::GetLaneRoadMark(*Road1, 1);
+			Check(Readback.Type == EOpenDriveRoadMarkType::BottsDots && Readback.Color == EOpenDriveRoadMarkColor::Blue && Readback.Weight == EOpenDriveRoadMarkWeight::Bold,
+				"GetLaneRoadMark reflects SetLaneRoadMarkConstant");
 		}
 		else
 		{

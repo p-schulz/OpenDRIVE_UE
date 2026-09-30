@@ -144,6 +144,49 @@ struct OPENDRIVE_API FOpenDriveShapeEntry
 	}
 };
 
+/** <lane><roadMark> line type. Botts dots/grass/curb/edge are rendered as a plain coloured line in the
+ *  debug visualizer (Phase 7's mesh generation is what actually distinguishes their geometry). */
+enum class EOpenDriveRoadMarkType : uint8
+{
+	None,
+	Solid,
+	Broken,
+	SolidSolid,
+	SolidBroken,
+	BrokenSolid,
+	BrokenBroken,
+	BottsDots,
+	Grass,
+	Curb,
+	Edge,
+	Custom
+};
+
+enum class EOpenDriveRoadMarkWeight : uint8 { Standard, Bold };
+enum class EOpenDriveRoadMarkColor : uint8 { Standard, Yellow, Red, Blue, Green, Orange, Violet };
+enum class EOpenDriveLaneChange : uint8 { Increase, Decrease, Both, None };
+
+OPENDRIVE_API EOpenDriveRoadMarkType ParseOpenDriveRoadMarkType(const FString& S);
+OPENDRIVE_API FString OpenDriveRoadMarkTypeToString(EOpenDriveRoadMarkType Type);
+OPENDRIVE_API EOpenDriveRoadMarkColor ParseOpenDriveRoadMarkColor(const FString& S);
+OPENDRIVE_API FString OpenDriveRoadMarkColorToString(EOpenDriveRoadMarkColor Color);
+OPENDRIVE_API EOpenDriveLaneChange ParseOpenDriveLaneChange(const FString& S);
+OPENDRIVE_API FString OpenDriveLaneChangeToString(EOpenDriveLaneChange Value);
+
+/** <lane><roadMark>: paints the line at this lane's outer border (the one further from the centre line),
+ *  or the centre line itself for lane 0. Valid from S (absolute road s) on. */
+struct OPENDRIVE_API FOpenDriveRoadMarkEntry
+{
+	double S = 0.0;
+	EOpenDriveRoadMarkType Type = EOpenDriveRoadMarkType::Solid;
+	EOpenDriveRoadMarkWeight Weight = EOpenDriveRoadMarkWeight::Standard;
+	EOpenDriveRoadMarkColor Color = EOpenDriveRoadMarkColor::Standard;
+	/** Metres; negative means "unspecified" (reader should assume a sensible default, e.g. 0.12 m). */
+	double Width = -1.0;
+	EOpenDriveLaneChange LaneChange = EOpenDriveLaneChange::None;
+	double Height = 0.0;
+};
+
 struct OPENDRIVE_API FOpenDriveLane
 {
 	int32 Id = 0;
@@ -155,6 +198,25 @@ struct OPENDRIVE_API FOpenDriveLane
 	TArray<FOpenDriveCubic> Widths;
 	/** Lane speed limits (absolute s). */
 	TArray<FOpenDriveSpeedLimit> SpeedLimits;
+	/** Absolute-s road mark entries (sOffset already added to the lane section start). */
+	TArray<FOpenDriveRoadMarkEntry> RoadMarks;
+
+	const FOpenDriveRoadMarkEntry* FindRoadMarkAt(double AbsS) const
+	{
+		const FOpenDriveRoadMarkEntry* Best = nullptr;
+		for (const FOpenDriveRoadMarkEntry& Entry : RoadMarks)
+		{
+			if (Entry.S <= AbsS + 1e-9)
+			{
+				Best = &Entry;
+			}
+			else
+			{
+				break;
+			}
+		}
+		return Best;
+	}
 
 	double GetWidth(double AbsS) const
 	{

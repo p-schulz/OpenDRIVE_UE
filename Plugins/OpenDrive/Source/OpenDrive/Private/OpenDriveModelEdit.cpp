@@ -45,16 +45,27 @@ FString FOpenDriveModelEdit::AddStraightRoad(FOpenDriveMap& Map, const FString& 
 	FOpenDriveLaneSection Section;
 	Section.S = 0.0;
 	Section.EndS = Road.Length;
+
+	FOpenDriveLane Center;
+	Center.Id = 0;
+	Center.Type = TEXT("none");
+	Center.RoadMarks.Add(FOpenDriveRoadMarkEntry{ 0.0, EOpenDriveRoadMarkType::Broken, EOpenDriveRoadMarkWeight::Standard, EOpenDriveRoadMarkColor::Standard, -1.0, EOpenDriveLaneChange::Both, 0.0 });
+	Section.Lanes.Add(Center);
+
 	FOpenDriveLane Left;
 	Left.Id = 1;
 	Left.Type = TEXT("driving");
 	Left.Widths.Add(FOpenDriveCubic{ 0.0, 3.5, 0.0, 0.0, 0.0 });
+	Left.RoadMarks.Add(FOpenDriveRoadMarkEntry{ 0.0, EOpenDriveRoadMarkType::Solid, EOpenDriveRoadMarkWeight::Standard, EOpenDriveRoadMarkColor::Standard, -1.0, EOpenDriveLaneChange::None, 0.0 });
 	Section.Lanes.Add(Left);
+
 	FOpenDriveLane Right;
 	Right.Id = -1;
 	Right.Type = TEXT("driving");
 	Right.Widths.Add(FOpenDriveCubic{ 0.0, 3.5, 0.0, 0.0, 0.0 });
+	Right.RoadMarks.Add(FOpenDriveRoadMarkEntry{ 0.0, EOpenDriveRoadMarkType::Solid, EOpenDriveRoadMarkWeight::Standard, EOpenDriveRoadMarkColor::Standard, -1.0, EOpenDriveLaneChange::None, 0.0 });
 	Section.Lanes.Add(Right);
+
 	Road.LaneSections.Add(MoveTemp(Section));
 
 	Map.ComputeRoadBounds(Road);
@@ -258,6 +269,55 @@ bool FOpenDriveModelEdit::SetLaneWidthConstant(FOpenDriveRoad& Road, int32 LaneI
 	return bFound;
 }
 
+bool FOpenDriveModelEdit::SetLaneRoadMarkConstant(FOpenDriveRoad& Road, int32 LaneId, const FOpenDriveRoadMarkEntry& Mark)
+{
+	bool bFound = false;
+	for (FOpenDriveLaneSection& Section : Road.LaneSections)
+	{
+		for (FOpenDriveLane& Lane : Section.Lanes)
+		{
+			if (Lane.Id == LaneId)
+			{
+				Lane.RoadMarks.Reset();
+				FOpenDriveRoadMarkEntry Entry = Mark;
+				Entry.S = Section.S;
+				Lane.RoadMarks.Add(MoveTemp(Entry));
+				bFound = true;
+			}
+		}
+	}
+	return bFound;
+}
+
+FOpenDriveRoadMarkEntry FOpenDriveModelEdit::GetLaneRoadMark(const FOpenDriveRoad& Road, int32 LaneId)
+{
+	if (Road.LaneSections.Num() > 0)
+	{
+		if (const FOpenDriveLane* Lane = Road.LaneSections[0].FindLane(LaneId))
+		{
+			if (const FOpenDriveRoadMarkEntry* Mark = Lane->FindRoadMarkAt(Road.LaneSections[0].S))
+			{
+				return *Mark;
+			}
+		}
+	}
+	return FOpenDriveRoadMarkEntry();
+}
+
+TArray<int32> FOpenDriveModelEdit::GetLaneIds(const FOpenDriveRoad& Road)
+{
+	TArray<int32> Ids;
+	if (Road.LaneSections.Num() > 0)
+	{
+		for (const FOpenDriveLane& Lane : Road.LaneSections[0].Lanes)
+		{
+			Ids.Add(Lane.Id);
+		}
+		Ids.Sort([](int32 A, int32 B) { return A > B; });
+	}
+	return Ids;
+}
+
 int32 FOpenDriveModelEdit::AddLane(FOpenDriveRoad& Road, bool bLeft, double Width)
 {
 	int32 NewId = bLeft ? 1 : -1;
@@ -265,7 +325,7 @@ int32 FOpenDriveModelEdit::AddLane(FOpenDriveRoad& Road, bool bLeft, double Widt
 	{
 		for (const FOpenDriveLane& Lane : Section.Lanes)
 		{
-			if ((Lane.Id > 0) == bLeft)
+			if (Lane.Id != 0 && (Lane.Id > 0) == bLeft)
 			{
 				NewId = bLeft ? FMath::Max(NewId, Lane.Id + 1) : FMath::Min(NewId, Lane.Id - 1);
 			}
@@ -277,6 +337,7 @@ int32 FOpenDriveModelEdit::AddLane(FOpenDriveRoad& Road, bool bLeft, double Widt
 		Lane.Id = NewId;
 		Lane.Type = TEXT("driving");
 		Lane.Widths.Add(FOpenDriveCubic{ Section.S, FMath::Max(0.0, Width), 0.0, 0.0, 0.0 });
+		Lane.RoadMarks.Add(FOpenDriveRoadMarkEntry{ Section.S, EOpenDriveRoadMarkType::Broken, EOpenDriveRoadMarkWeight::Standard, EOpenDriveRoadMarkColor::Standard, -1.0, EOpenDriveLaneChange::None, 0.0 });
 		Section.Lanes.Add(Lane);
 		Section.Lanes.Sort([](const FOpenDriveLane& A, const FOpenDriveLane& B) { return A.Id < B.Id; });
 	}

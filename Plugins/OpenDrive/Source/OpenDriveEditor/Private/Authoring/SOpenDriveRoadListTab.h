@@ -60,6 +60,21 @@ private:
 	FReply OnApplyCrownShapeClicked();
 	FReply OnClearCrownShapeClicked();
 
+	// Road marks
+	FText GetSelectedLaneText() const;
+	TSharedRef<SWidget> BuildLaneMenu();
+	void OnLanePicked(int32 LaneId);
+	FText GetMarkTypeText() const;
+	TSharedRef<SWidget> BuildMarkTypeMenu();
+	void OnMarkTypePicked(EOpenDriveRoadMarkType Type);
+	FText GetMarkColorText() const;
+	TSharedRef<SWidget> BuildMarkColorMenu();
+	void OnMarkColorPicked(EOpenDriveRoadMarkColor Color);
+	ECheckBoxState GetMarkBoldState() const;
+	void OnMarkBoldChanged(ECheckBoxState NewState);
+	bool HasLaneSelection() const;
+	FReply OnApplyRoadMarkClicked();
+
 	FOpenDriveEditorContext* Context = nullptr;
 	TArray<FRowPtr> Rows;
 	TSharedPtr<SListView<FRowPtr>> List;
@@ -68,4 +83,10 @@ private:
 	bool bUpdatingSelection = false;
 	double PendingCrownHeight = 0.05;
 	double PendingCrownHalfWidth = 1.75;
+
+	static constexpr int32 NoLaneSelected = MAX_int32;
+	int32 SelectedLaneId = NoLaneSelected;
+	EOpenDriveRoadMarkType PendingMarkType = EOpenDriveRoadMarkType::Solid;
+	EOpenDriveRoadMarkColor PendingMarkColor = EOpenDriveRoadMarkColor::Standard;
+	bool bPendingMarkBold = false;
 };

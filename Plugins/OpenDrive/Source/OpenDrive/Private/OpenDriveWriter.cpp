@@ -166,9 +166,12 @@ FString FOpenDriveWriter::Write(const FOpenDriveMap& Map)
 			Out += FString::Printf(TEXT("\t\t\t<laneSection s=\"%s\">\n"), *D(Sec.S));
 
 			TArray<const FOpenDriveLane*> Left, Right;
+			const FOpenDriveLane* Center = nullptr;
 			for (const FOpenDriveLane& L : Sec.Lanes)
 			{
-				(L.Id > 0 ? Left : Right).Add(&L);
+				if (L.Id > 0) { Left.Add(&L); }
+				else if (L.Id < 0) { Right.Add(&L); }
+				else { Center = &L; }
 			}
 			Left.Sort([](const FOpenDriveLane* A, const FOpenDriveLane* B) { return A->Id > B->Id; });
 			Right.Sort([](const FOpenDriveLane* A, const FOpenDriveLane* B) { return A->Id > B->Id; });
@@ -192,6 +195,14 @@ FString FOpenDriveWriter::Write(const FOpenDriveMap& Map)
 						Out += TEXT("\t\t\t\t\t\t</link>\n");
 					}
 					WriteCubics(Out, TEXT("width"), TEXT("sOffset"), L.Widths, Sec.S, TEXT("\t\t\t\t\t\t"));
+					for (const FOpenDriveRoadMarkEntry& RM : L.RoadMarks)
+					{
+						const FString WidthAttr = RM.Width >= 0.0 ? FString::Printf(TEXT(" width=\"%s\""), *D(RM.Width)) : FString();
+						const FString HeightAttr = FMath::Abs(RM.Height) > 1e-9 ? FString::Printf(TEXT(" height=\"%s\""), *D(RM.Height)) : FString();
+						Out += FString::Printf(TEXT("\t\t\t\t\t\t<roadMark sOffset=\"%s\" type=\"%s\" weight=\"%s\" color=\"%s\"%s laneChange=\"%s\"%s/>\n"),
+							*D(RM.S - Sec.S), *OpenDriveRoadMarkTypeToString(RM.Type), RM.Weight == EOpenDriveRoadMarkWeight::Bold ? TEXT("bold") : TEXT("standard"),
+							*OpenDriveRoadMarkColorToString(RM.Color), *WidthAttr, *OpenDriveLaneChangeToString(RM.LaneChange), *HeightAttr);
+					}
 					for (const FOpenDriveSpeedLimit& Limit : L.SpeedLimits)
 					{
 						Out += FString::Printf(TEXT("\t\t\t\t\t\t<speed sOffset=\"%s\" max=\"%s\" unit=\"m/s\"/>\n"), *D(Limit.S - Sec.S), *D(Limit.MaxSpeed));
@@ -201,7 +212,16 @@ FString FOpenDriveWriter::Write(const FOpenDriveMap& Map)
 				Out += FString::Printf(TEXT("\t\t\t\t</%s>\n"), SideTag);
 			};
 			WriteSide(TEXT("left"), Left);
-			Out += TEXT("\t\t\t\t<center>\n\t\t\t\t\t<lane id=\"0\" type=\"none\" level=\"false\"/>\n\t\t\t\t</center>\n");
+			if (Center)
+			{
+				TArray<const FOpenDriveLane*> CenterList;
+				CenterList.Add(Center);
+				WriteSide(TEXT("center"), CenterList);
+			}
+			else
+			{
+				Out += TEXT("\t\t\t\t<center>\n\t\t\t\t\t<lane id=\"0\" type=\"none\" level=\"false\"/>\n\t\t\t\t</center>\n");
+			}
 			WriteSide(TEXT("right"), Right);
 
 			Out += TEXT("\t\t\t</laneSection>\n");

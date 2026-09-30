@@ -5,6 +5,7 @@
 #include "Styling/AppStyle.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SComboButton.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SSpinBox.h"
@@ -207,6 +208,72 @@ void SOpenDriveRoadListTab::Construct(const FArguments& InArgs, FOpenDriveEditor
 							]
 						]
 					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(4.f, 8.f, 4.f, 4.f)
+					[
+						SNew(SExpandableArea)
+						.AreaTitle(LOCTEXT("RoadMarksSection", "Road Marks"))
+						.InitiallyCollapsed(true)
+						.BodyContent()
+						[
+							SNew(SVerticalBox)
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f)
+							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 4.f, 0.f)[ SNew(STextBlock).Text(LOCTEXT("Lane", "Lane")) ]
+								+ SHorizontalBox::Slot().FillWidth(1.f)
+								[
+									SNew(SComboButton)
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasSelection)
+									.ButtonContent()[ SNew(STextBlock).Text(this, &SOpenDriveRoadListTab::GetSelectedLaneText) ]
+									.OnGetMenuContent(this, &SOpenDriveRoadListTab::BuildLaneMenu)
+								]
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f)
+							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 4.f, 0.f)[ SNew(STextBlock).Text(LOCTEXT("MarkType", "Type")) ]
+								+ SHorizontalBox::Slot().FillWidth(1.f)
+								[
+									SNew(SComboButton)
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasLaneSelection)
+									.ButtonContent()[ SNew(STextBlock).Text(this, &SOpenDriveRoadListTab::GetMarkTypeText) ]
+									.OnGetMenuContent(this, &SOpenDriveRoadListTab::BuildMarkTypeMenu)
+								]
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f)
+							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 4.f, 0.f)[ SNew(STextBlock).Text(LOCTEXT("MarkColor", "Color")) ]
+								+ SHorizontalBox::Slot().FillWidth(1.f)
+								[
+									SNew(SComboButton)
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasLaneSelection)
+									.ButtonContent()[ SNew(STextBlock).Text(this, &SOpenDriveRoadListTab::GetMarkColorText) ]
+									.OnGetMenuContent(this, &SOpenDriveRoadListTab::BuildMarkColorMenu)
+								]
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f)
+							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 4.f, 0.f)[ SNew(STextBlock).Text(LOCTEXT("MarkBold", "Bold")) ]
+								+ SHorizontalBox::Slot().AutoWidth()
+								[
+									SNew(SCheckBox)
+									.IsEnabled(this, &SOpenDriveRoadListTab::HasLaneSelection)
+									.IsChecked(this, &SOpenDriveRoadListTab::GetMarkBoldState)
+									.OnCheckStateChanged(this, &SOpenDriveRoadListTab::OnMarkBoldChanged)
+								]
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 4.f, 0.f, 0.f)
+							[
+								SNew(SButton)
+								.Text(LOCTEXT("ApplyMark", "Apply Road Mark"))
+								.ToolTipText(LOCTEXT("ApplyMarkTip", "Set a single, constant road mark for the selected lane across the whole road"))
+								.IsEnabled(this, &SOpenDriveRoadListTab::HasLaneSelection)
+								.OnClicked(this, &SOpenDriveRoadListTab::OnApplyRoadMarkClicked)
+							]
+						]
+					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(4.f)
 					[
 						SNew(STextBlock).Text(this, &SOpenDriveRoadListTab::GetInfoText).AutoWrapText(true)
@@ -219,6 +286,7 @@ void SOpenDriveRoadListTab::Construct(const FArguments& InArgs, FOpenDriveEditor
 	StructureHandle = Context->OnStructureChanged.AddSP(this, &SOpenDriveRoadListTab::RebuildList);
 	SelectionHandle = Context->OnSelectionChanged.AddLambda([this]()
 	{
+		SelectedLaneId = NoLaneSelected;
 		if (bUpdatingSelection || !List.IsValid())
 		{
 			return;
@@ -425,6 +493,123 @@ FReply SOpenDriveRoadListTab::OnClearCrownShapeClicked()
 	if (Context && Context->GetSelectedRoadMutable())
 	{
 		Context->GetSelectedRoadMutable()->Shape.Reset();
+		Context->NotifyValueChanged();
+	}
+	return FReply::Handled();
+}
+
+bool SOpenDriveRoadListTab::HasLaneSelection() const
+{
+	return HasSelection() && SelectedLaneId != NoLaneSelected;
+}
+
+FText SOpenDriveRoadListTab::GetSelectedLaneText() const
+{
+	if (SelectedLaneId == NoLaneSelected)
+	{
+		return LOCTEXT("NoLane", "(pick a lane)");
+	}
+	return FText::AsNumber(SelectedLaneId);
+}
+
+TSharedRef<SWidget> SOpenDriveRoadListTab::BuildLaneMenu()
+{
+	FMenuBuilder Menu(true, nullptr);
+	const FOpenDriveRoad* Road = Context ? Context->GetSelectedRoad() : nullptr;
+	if (Road)
+	{
+		for (const int32 LaneId : FOpenDriveModelEdit::GetLaneIds(*Road))
+		{
+			Menu.AddMenuEntry(FText::AsNumber(LaneId), FText(), FSlateIcon(),
+				FUIAction(FExecuteAction::CreateSP(this, &SOpenDriveRoadListTab::OnLanePicked, LaneId)));
+		}
+	}
+	return Menu.MakeWidget();
+}
+
+void SOpenDriveRoadListTab::OnLanePicked(int32 LaneId)
+{
+	SelectedLaneId = LaneId;
+	if (const FOpenDriveRoad* Road = Context ? Context->GetSelectedRoad() : nullptr)
+	{
+		const FOpenDriveRoadMarkEntry Mark = FOpenDriveModelEdit::GetLaneRoadMark(*Road, LaneId);
+		PendingMarkType = Mark.Type;
+		PendingMarkColor = Mark.Color;
+		bPendingMarkBold = Mark.Weight == EOpenDriveRoadMarkWeight::Bold;
+	}
+}
+
+FText SOpenDriveRoadListTab::GetMarkTypeText() const
+{
+	return FText::FromString(OpenDriveRoadMarkTypeToString(PendingMarkType));
+}
+
+TSharedRef<SWidget> SOpenDriveRoadListTab::BuildMarkTypeMenu()
+{
+	static const EOpenDriveRoadMarkType Types[] = {
+		EOpenDriveRoadMarkType::None, EOpenDriveRoadMarkType::Solid, EOpenDriveRoadMarkType::Broken,
+		EOpenDriveRoadMarkType::SolidSolid, EOpenDriveRoadMarkType::SolidBroken, EOpenDriveRoadMarkType::BrokenSolid,
+		EOpenDriveRoadMarkType::BrokenBroken, EOpenDriveRoadMarkType::BottsDots, EOpenDriveRoadMarkType::Grass,
+		EOpenDriveRoadMarkType::Curb, EOpenDriveRoadMarkType::Edge, EOpenDriveRoadMarkType::Custom
+	};
+	FMenuBuilder Menu(true, nullptr);
+	for (const EOpenDriveRoadMarkType Type : Types)
+	{
+		Menu.AddMenuEntry(FText::FromString(OpenDriveRoadMarkTypeToString(Type)), FText(), FSlateIcon(),
+			FUIAction(FExecuteAction::CreateSP(this, &SOpenDriveRoadListTab::OnMarkTypePicked, Type)));
+	}
+	return Menu.MakeWidget();
+}
+
+void SOpenDriveRoadListTab::OnMarkTypePicked(EOpenDriveRoadMarkType Type)
+{
+	PendingMarkType = Type;
+}
+
+FText SOpenDriveRoadListTab::GetMarkColorText() const
+{
+	return FText::FromString(OpenDriveRoadMarkColorToString(PendingMarkColor));
+}
+
+TSharedRef<SWidget> SOpenDriveRoadListTab::BuildMarkColorMenu()
+{
+	static const EOpenDriveRoadMarkColor Colors[] = {
+		EOpenDriveRoadMarkColor::Standard, EOpenDriveRoadMarkColor::Yellow, EOpenDriveRoadMarkColor::Red,
+		EOpenDriveRoadMarkColor::Blue, EOpenDriveRoadMarkColor::Green, EOpenDriveRoadMarkColor::Orange, EOpenDriveRoadMarkColor::Violet
+	};
+	FMenuBuilder Menu(true, nullptr);
+	for (const EOpenDriveRoadMarkColor Color : Colors)
+	{
+		Menu.AddMenuEntry(FText::FromString(OpenDriveRoadMarkColorToString(Color)), FText(), FSlateIcon(),
+			FUIAction(FExecuteAction::CreateSP(this, &SOpenDriveRoadListTab::OnMarkColorPicked, Color)));
+	}
+	return Menu.MakeWidget();
+}
+
+void SOpenDriveRoadListTab::OnMarkColorPicked(EOpenDriveRoadMarkColor Color)
+{
+	PendingMarkColor = Color;
+}
+
+ECheckBoxState SOpenDriveRoadListTab::GetMarkBoldState() const
+{
+	return bPendingMarkBold ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+}
+
+void SOpenDriveRoadListTab::OnMarkBoldChanged(ECheckBoxState NewState)
+{
+	bPendingMarkBold = (NewState == ECheckBoxState::Checked);
+}
+
+FReply SOpenDriveRoadListTab::OnApplyRoadMarkClicked()
+{
+	if (Context && HasLaneSelection())
+	{
+		FOpenDriveRoadMarkEntry Mark;
+		Mark.Type = PendingMarkType;
+		Mark.Weight = bPendingMarkBold ? EOpenDriveRoadMarkWeight::Bold : EOpenDriveRoadMarkWeight::Standard;
+		Mark.Color = PendingMarkColor;
+		FOpenDriveModelEdit::SetLaneRoadMarkConstant(*Context->GetSelectedRoadMutable(), SelectedLaneId, Mark);
 		Context->NotifyValueChanged();
 	}
 	return FReply::Handled();

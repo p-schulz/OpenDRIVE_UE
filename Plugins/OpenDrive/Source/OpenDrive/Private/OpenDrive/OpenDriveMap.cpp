@@ -197,6 +197,112 @@ FString OpenDriveRoadTypeToString(EOpenDriveRoadType Type)
 	}
 }
 
+EOpenDriveRoadMarkType ParseOpenDriveRoadMarkType(const FString& S)
+{
+	static const TPair<const TCHAR*, EOpenDriveRoadMarkType> Map[] = {
+		{ TEXT("none"), EOpenDriveRoadMarkType::None },
+		{ TEXT("solid"), EOpenDriveRoadMarkType::Solid },
+		{ TEXT("broken"), EOpenDriveRoadMarkType::Broken },
+		{ TEXT("solid solid"), EOpenDriveRoadMarkType::SolidSolid },
+		{ TEXT("solid broken"), EOpenDriveRoadMarkType::SolidBroken },
+		{ TEXT("broken solid"), EOpenDriveRoadMarkType::BrokenSolid },
+		{ TEXT("broken broken"), EOpenDriveRoadMarkType::BrokenBroken },
+		{ TEXT("botts dots"), EOpenDriveRoadMarkType::BottsDots },
+		{ TEXT("grass"), EOpenDriveRoadMarkType::Grass },
+		{ TEXT("curb"), EOpenDriveRoadMarkType::Curb },
+		{ TEXT("edge"), EOpenDriveRoadMarkType::Edge },
+		{ TEXT("custom"), EOpenDriveRoadMarkType::Custom },
+	};
+	for (const TPair<const TCHAR*, EOpenDriveRoadMarkType>& Entry : Map)
+	{
+		if (S.Equals(Entry.Key, ESearchCase::IgnoreCase))
+		{
+			return Entry.Value;
+		}
+	}
+	return EOpenDriveRoadMarkType::Solid;
+}
+
+FString OpenDriveRoadMarkTypeToString(EOpenDriveRoadMarkType Type)
+{
+	switch (Type)
+	{
+	case EOpenDriveRoadMarkType::None: return TEXT("none");
+	case EOpenDriveRoadMarkType::Solid: return TEXT("solid");
+	case EOpenDriveRoadMarkType::Broken: return TEXT("broken");
+	case EOpenDriveRoadMarkType::SolidSolid: return TEXT("solid solid");
+	case EOpenDriveRoadMarkType::SolidBroken: return TEXT("solid broken");
+	case EOpenDriveRoadMarkType::BrokenSolid: return TEXT("broken solid");
+	case EOpenDriveRoadMarkType::BrokenBroken: return TEXT("broken broken");
+	case EOpenDriveRoadMarkType::BottsDots: return TEXT("botts dots");
+	case EOpenDriveRoadMarkType::Grass: return TEXT("grass");
+	case EOpenDriveRoadMarkType::Curb: return TEXT("curb");
+	case EOpenDriveRoadMarkType::Edge: return TEXT("edge");
+	case EOpenDriveRoadMarkType::Custom:
+	default:
+		return TEXT("custom");
+	}
+}
+
+EOpenDriveRoadMarkColor ParseOpenDriveRoadMarkColor(const FString& S)
+{
+	static const TPair<const TCHAR*, EOpenDriveRoadMarkColor> Map[] = {
+		{ TEXT("standard"), EOpenDriveRoadMarkColor::Standard },
+		{ TEXT("white"), EOpenDriveRoadMarkColor::Standard },
+		{ TEXT("yellow"), EOpenDriveRoadMarkColor::Yellow },
+		{ TEXT("red"), EOpenDriveRoadMarkColor::Red },
+		{ TEXT("blue"), EOpenDriveRoadMarkColor::Blue },
+		{ TEXT("green"), EOpenDriveRoadMarkColor::Green },
+		{ TEXT("orange"), EOpenDriveRoadMarkColor::Orange },
+		{ TEXT("violet"), EOpenDriveRoadMarkColor::Violet },
+	};
+	for (const TPair<const TCHAR*, EOpenDriveRoadMarkColor>& Entry : Map)
+	{
+		if (S.Equals(Entry.Key, ESearchCase::IgnoreCase))
+		{
+			return Entry.Value;
+		}
+	}
+	return EOpenDriveRoadMarkColor::Standard;
+}
+
+FString OpenDriveRoadMarkColorToString(EOpenDriveRoadMarkColor Color)
+{
+	switch (Color)
+	{
+	case EOpenDriveRoadMarkColor::Yellow: return TEXT("yellow");
+	case EOpenDriveRoadMarkColor::Red: return TEXT("red");
+	case EOpenDriveRoadMarkColor::Blue: return TEXT("blue");
+	case EOpenDriveRoadMarkColor::Green: return TEXT("green");
+	case EOpenDriveRoadMarkColor::Orange: return TEXT("orange");
+	case EOpenDriveRoadMarkColor::Violet: return TEXT("violet");
+	case EOpenDriveRoadMarkColor::Standard:
+	default:
+		return TEXT("standard");
+	}
+}
+
+EOpenDriveLaneChange ParseOpenDriveLaneChange(const FString& S)
+{
+	if (S.Equals(TEXT("increase"), ESearchCase::IgnoreCase)) { return EOpenDriveLaneChange::Increase; }
+	if (S.Equals(TEXT("decrease"), ESearchCase::IgnoreCase)) { return EOpenDriveLaneChange::Decrease; }
+	if (S.Equals(TEXT("both"), ESearchCase::IgnoreCase)) { return EOpenDriveLaneChange::Both; }
+	return EOpenDriveLaneChange::None;
+}
+
+FString OpenDriveLaneChangeToString(EOpenDriveLaneChange Value)
+{
+	switch (Value)
+	{
+	case EOpenDriveLaneChange::Increase: return TEXT("increase");
+	case EOpenDriveLaneChange::Decrease: return TEXT("decrease");
+	case EOpenDriveLaneChange::Both: return TEXT("both");
+	case EOpenDriveLaneChange::None:
+	default:
+		return TEXT("none");
+	}
+}
+
 double FOpenDriveCubic::EvalPiecewise(const TArray<FOpenDriveCubic>& Entries, double AbsS)
 {
 	if (Entries.Num() == 0)
@@ -384,7 +490,7 @@ bool FOpenDriveMap::LoadFromString(const FString& Xml, FString& OutError)
 				FOpenDriveLaneSection Section;
 				Section.S = AttrD(SecNode, TEXT("s"));
 
-				static const TCHAR* const Sides[] = { TEXT("left"), TEXT("right") };
+				static const TCHAR* const Sides[] = { TEXT("left"), TEXT("center"), TEXT("right") };
 				for (const TCHAR* Side : Sides)
 				{
 					const FXmlNode* SideNode = ODRXml::Child(SecNode, Side);
@@ -409,10 +515,21 @@ bool FOpenDriveMap::LoadFromString(const FString& Xml, FString& OutError)
 							Lane.Widths.Add(ParseCubic(W, TEXT("sOffset"), Section.S));
 						}
 						Lane.Widths.Sort([](const FOpenDriveCubic& A, const FOpenDriveCubic& B) { return A.S < B.S; });
-						if (Lane.Id != 0)
+						for (const FXmlNode* RM : ODRXml::Children(LaneNode, TEXT("roadMark")))
 						{
-							Section.Lanes.Add(MoveTemp(Lane));
+							FOpenDriveRoadMarkEntry Entry;
+							Entry.S = Section.S + AttrD(RM, TEXT("sOffset"));
+							Entry.Type = ParseOpenDriveRoadMarkType(AttrS(RM, TEXT("type")));
+							Entry.Weight = AttrS(RM, TEXT("weight")).Equals(TEXT("bold"), ESearchCase::IgnoreCase) ? EOpenDriveRoadMarkWeight::Bold : EOpenDriveRoadMarkWeight::Standard;
+							Entry.Color = ParseOpenDriveRoadMarkColor(AttrS(RM, TEXT("color")));
+							FString WidthStr;
+							Entry.Width = ODRXml::TryAttr(RM, TEXT("width"), WidthStr) ? FCString::Atod(*WidthStr) : -1.0;
+							Entry.LaneChange = ParseOpenDriveLaneChange(AttrS(RM, TEXT("laneChange")));
+							Entry.Height = AttrD(RM, TEXT("height"), 0.0);
+							Lane.RoadMarks.Add(Entry);
 						}
+						Lane.RoadMarks.Sort([](const FOpenDriveRoadMarkEntry& A, const FOpenDriveRoadMarkEntry& B) { return A.S < B.S; });
+						Section.Lanes.Add(MoveTemp(Lane));
 					}
 				}
 				Section.Lanes.Sort([](const FOpenDriveLane& A, const FOpenDriveLane& B) { return A.Id < B.Id; });
