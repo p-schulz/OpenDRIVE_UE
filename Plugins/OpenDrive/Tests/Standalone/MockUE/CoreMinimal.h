@@ -112,6 +112,8 @@ public:
 	void Insert(const T& t, int32 i) { V.insert(V.begin() + i, t); }
 	void Swap(int32 a, int32 b) { std::swap(V[a], V[b]); }
 	bool Contains(const T& t) const { for (auto& x : V) if (x == t) return true; return false; }
+	int32 AddUnique(const T& t) { if (Contains(t)) return IndexOfByPredicate([&](const T& x) { return x == t; }); return Add(t); }
+	int32 Remove(const T& t) { int32 n = 0; for (size_t i = 0; i < V.size();) { if (V[i] == t) { V.erase(V.begin() + i); ++n; } else { ++i; } } return n; }
 	template <class P> int32 IndexOfByPredicate(P p) const { for (size_t i = 0; i < V.size(); ++i) if (p(V[i])) return (int32)i; return INDEX_NONE; }
 	template <class P> const T* FindByPredicate(P p) const { for (auto& x : V) if (p(x)) return &x; return nullptr; }
 	template <class P> T* FindByPredicate(P p) { for (auto& x : V) if (p(x)) return &x; return nullptr; }

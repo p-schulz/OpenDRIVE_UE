@@ -122,6 +122,16 @@ void SOpenDriveModePanel::Construct(const FArguments& InArgs, FOpenDriveEditorCo
 					]
 					+ SWrapBox::Slot().Padding(0.f, 0.f, 4.f, 4.f)
 					[
+						MakeButton(LOCTEXT("Objects", "Objects"), LOCTEXT("ObjectsTip", "Open the dockable static-object editor (poles, trees, barriers)"),
+							[]() { FOpenDriveEditorModule::Get().OpenObjectsTab(); return FReply::Handled(); }, Always)
+					]
+					+ SWrapBox::Slot().Padding(0.f, 0.f, 4.f, 4.f)
+					[
+						MakeButton(LOCTEXT("JunctionGroups", "Junction Groups"), LOCTEXT("JunctionGroupsTip", "Open the dockable junction group editor (group junctions into a single intersection, e.g. a roundabout)"),
+							[]() { FOpenDriveEditorModule::Get().OpenJunctionGroupsTab(); return FReply::Handled(); }, Always)
+					]
+					+ SWrapBox::Slot().Padding(0.f, 0.f, 4.f, 4.f)
+					[
 						MakeButton(LOCTEXT("Apply", "Apply"), LOCTEXT("ApplyTip", "Write unapplied edits to the road network asset"),
 							[Ctx]() { Ctx->Apply(); return FReply::Handled(); }, [Ctx]() { return Ctx->GetAsset() && Ctx->IsDirty(); })
 					]

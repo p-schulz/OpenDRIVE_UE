@@ -267,6 +267,25 @@ FString FOpenDriveWriter::Write(const FOpenDriveMap& Map)
 			Out += TEXT("\t\t</signals>\n");
 		}
 
+		if (Road.Objects.Num() > 0)
+		{
+			Out += TEXT("\t\t<objects>\n");
+			for (const FOpenDriveObject& Obj : Road.Objects)
+			{
+				Out += FString::Printf(TEXT("\t\t\t<object id=\"%s\" name=\"%s\" type=\"%s\" s=\"%s\" t=\"%s\" zOffset=\"%s\" hdg=\"%s\" pitch=\"%s\" roll=\"%s\" orientation=\"%s\""),
+					*Esc(Obj.Id), *Esc(Obj.Name), *Esc(Obj.Type), *D(Obj.S), *D(Obj.T), *D(Obj.ZOffset), *D(Obj.HOffset), *D(Obj.Pitch), *D(Obj.Roll), *OpenDriveSignalOrientationToString(Obj.Orientation));
+				if (Obj.Radius > 0.0)
+				{
+					Out += FString::Printf(TEXT(" radius=\"%s\" height=\"%s\"/>\n"), *D(Obj.Radius), *D(Obj.Height));
+				}
+				else
+				{
+					Out += FString::Printf(TEXT(" length=\"%s\" width=\"%s\" height=\"%s\"/>\n"), *D(Obj.Length), *D(Obj.Width), *D(Obj.Height));
+				}
+			}
+			Out += TEXT("\t\t</objects>\n");
+		}
+
 		Out += TEXT("\t</road>\n");
 	}
 
@@ -296,6 +315,16 @@ FString FOpenDriveWriter::Write(const FOpenDriveMap& Map)
 			Out += FString::Printf(TEXT("\t\t<control signalId=\"%s\"%s/>\n"), *Esc(Entry.SignalId), *TypeAttr);
 		}
 		Out += TEXT("\t</controller>\n");
+	}
+
+	for (const FOpenDriveJunctionGroup& Group : Map.GetJunctionGroups())
+	{
+		Out += FString::Printf(TEXT("\t<junctionGroup id=\"%s\" name=\"%s\" type=\"%s\">\n"), *Esc(Group.Id), *Esc(Group.Name), *Esc(Group.Type));
+		for (const FString& Ref : Group.JunctionRefs)
+		{
+			Out += FString::Printf(TEXT("\t\t<junctionReference junction=\"%s\"/>\n"), *Esc(Ref));
+		}
+		Out += TEXT("\t</junctionGroup>\n");
 	}
 
 	Out += TEXT("</OpenDRIVE>\n");

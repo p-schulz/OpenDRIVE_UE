@@ -1,6 +1,8 @@
 #include "OpenDriveEditorModule.h"
 #include "OpenDriveEditorContext.h"
 #include "Authoring/OpenDriveMapVisualizer.h"
+#include "Authoring/SOpenDriveJunctionGroupsTab.h"
+#include "Authoring/SOpenDriveObjectsTab.h"
 #include "Authoring/SOpenDrivePlanViewTab.h"
 #include "Authoring/SOpenDriveProfileTab.h"
 #include "Authoring/SOpenDriveRoadListTab.h"
@@ -22,6 +24,8 @@ const FName FOpenDriveEditorModule::LaneOffsetTabId(TEXT("OpenDriveLaneOffset"))
 const FName FOpenDriveEditorModule::CrossfallTabId(TEXT("OpenDriveCrossfall"));
 const FName FOpenDriveEditorModule::SignalsTabId(TEXT("OpenDriveSignals"));
 const FName FOpenDriveEditorModule::PlanViewTabId(TEXT("OpenDrivePlanView"));
+const FName FOpenDriveEditorModule::ObjectsTabId(TEXT("OpenDriveObjects"));
+const FName FOpenDriveEditorModule::JunctionGroupsTabId(TEXT("OpenDriveJunctionGroups"));
 
 FOpenDriveEditorModule& FOpenDriveEditorModule::Get()
 {
@@ -75,6 +79,16 @@ void FOpenDriveEditorModule::StartupModule()
 		.SetDisplayName(LOCTEXT("PlanViewTabTitle", "OpenDRIVE Plan View"))
 		.SetTooltipText(LOCTEXT("PlanViewTabTip", "Author the selected road's reference-line geometry (line/arc/spiral segments) and split lane sections"))
 		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory());
+
+	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(ObjectsTabId, FOnSpawnTab::CreateRaw(this, &FOpenDriveEditorModule::SpawnObjectsTab))
+		.SetDisplayName(LOCTEXT("ObjectsTabTitle", "OpenDRIVE Objects"))
+		.SetTooltipText(LOCTEXT("ObjectsTabTip", "Add and edit static objects (poles, trees, barriers) on the selected road"))
+		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory());
+
+	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(JunctionGroupsTabId, FOnSpawnTab::CreateRaw(this, &FOpenDriveEditorModule::SpawnJunctionGroupsTab))
+		.SetDisplayName(LOCTEXT("JunctionGroupsTabTitle", "OpenDRIVE Junction Groups"))
+		.SetTooltipText(LOCTEXT("JunctionGroupsTabTip", "Group junctions that form a single intersection (e.g. a roundabout split into several <junction> elements)"))
+		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory());
 }
 
 void FOpenDriveEditorModule::ShutdownModule()
@@ -88,6 +102,8 @@ void FOpenDriveEditorModule::ShutdownModule()
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(CrossfallTabId);
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(SignalsTabId);
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(PlanViewTabId);
+		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(ObjectsTabId);
+		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(JunctionGroupsTabId);
 	}
 	Visualizer.Reset();
 	Context.Reset();
@@ -163,6 +179,26 @@ TSharedRef<SDockTab> FOpenDriveEditorModule::SpawnPlanViewTab(const FSpawnTabArg
 		];
 }
 
+TSharedRef<SDockTab> FOpenDriveEditorModule::SpawnObjectsTab(const FSpawnTabArgs& Args)
+{
+	return SNew(SDockTab)
+		.TabRole(ETabRole::NomadTab)
+		.Label(LOCTEXT("ObjectsTabLabel", "OpenDRIVE Objects"))
+		[
+			SNew(SOpenDriveObjectsTab, *Context)
+		];
+}
+
+TSharedRef<SDockTab> FOpenDriveEditorModule::SpawnJunctionGroupsTab(const FSpawnTabArgs& Args)
+{
+	return SNew(SDockTab)
+		.TabRole(ETabRole::NomadTab)
+		.Label(LOCTEXT("JunctionGroupsTabLabel", "OpenDRIVE Junction Groups"))
+		[
+			SNew(SOpenDriveJunctionGroupsTab, *Context)
+		];
+}
+
 void FOpenDriveEditorModule::OpenRoadListTab() const
 {
 	FGlobalTabmanager::Get()->TryInvokeTab(RoadListTabId);
@@ -196,6 +232,16 @@ void FOpenDriveEditorModule::OpenSignalsTab() const
 void FOpenDriveEditorModule::OpenPlanViewTab() const
 {
 	FGlobalTabmanager::Get()->TryInvokeTab(PlanViewTabId);
+}
+
+void FOpenDriveEditorModule::OpenObjectsTab() const
+{
+	FGlobalTabmanager::Get()->TryInvokeTab(ObjectsTabId);
+}
+
+void FOpenDriveEditorModule::OpenJunctionGroupsTab() const
+{
+	FGlobalTabmanager::Get()->TryInvokeTab(JunctionGroupsTabId);
 }
 
 IMPLEMENT_MODULE(FOpenDriveEditorModule, OpenDriveEditor)

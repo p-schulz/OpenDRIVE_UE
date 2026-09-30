@@ -139,6 +139,24 @@ public:
 	static bool RemoveSignal(FOpenDriveRoad& Road, const FString& SignalId);
 	static bool SetSignalPose(FOpenDriveRoad& Road, const FString& SignalId, double S, double T, double ZOffset, double HOffsetRad);
 
+	// --- Objects (static props: poles, trees, barriers, ...) -------------------------------------
+	/** Adds a box-footprint object (Length/Width/Height) at (S, T) with the given free-form Type string
+	 *  (e.g. "pole", "tree", "barrier" -- the spec's suggested categories, but any string is accepted).
+	 *  Returns the new object's Id. */
+	static FString AddObject(FOpenDriveRoad& Road, const FString& Type, double S, double T, double Length, double Width, double Height);
+	/** Adds a round-footprint object (Radius) at (S, T), e.g. a pole or tree trunk. Returns the new object's Id. */
+	static FString AddRoundObject(FOpenDriveRoad& Road, const FString& Type, double S, double T, double Radius, double Height);
+	static bool RemoveObject(FOpenDriveRoad& Road, const FString& ObjectId);
+	static bool SetObjectPose(FOpenDriveRoad& Road, const FString& ObjectId, double S, double T, double ZOffset, double HOffsetRad);
+
+	// --- Junction groups (e.g. splitting a roundabout into several <junction> elements) -----------
+	/** Creates an empty junction group (Type is typically "roundabout", but stored verbatim). Returns its Id. */
+	static FString AddJunctionGroup(FOpenDriveMap& Map, const FString& Name, const FString& Type);
+	static bool RemoveJunctionGroup(FOpenDriveMap& Map, const FString& JunctionGroupId);
+	/** Adds JunctionId to the group's member list if not already present. Returns false if the group is unknown. */
+	static bool AddJunctionToGroup(FOpenDriveMap& Map, const FString& JunctionGroupId, const FString& JunctionId);
+	static bool RemoveJunctionFromGroup(FOpenDriveMap& Map, const FString& JunctionGroupId, const FString& JunctionId);
+
 	// --- Profile <-> editable point conversion (piecewise-linear: each stored segment has C = D = 0) ----
 	/** One point per stored segment start, plus a trailing point at RoadLength holding the last segment's value. */
 	static TArray<FVector2D> ProfileToPoints(const TArray<FOpenDriveCubic>& Profile, double RoadLength);

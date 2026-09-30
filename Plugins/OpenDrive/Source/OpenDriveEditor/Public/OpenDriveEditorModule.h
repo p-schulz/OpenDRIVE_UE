@@ -19,6 +19,8 @@ public:
 	static const FName CrossfallTabId;
 	static const FName SignalsTabId;
 	static const FName PlanViewTabId;
+	static const FName ObjectsTabId;
+	static const FName JunctionGroupsTabId;
 
 	static FOpenDriveEditorModule& Get();
 
@@ -36,6 +38,8 @@ public:
 	void OpenCrossfallTab() const;
 	void OpenSignalsTab() const;
 	void OpenPlanViewTab() const;
+	void OpenObjectsTab() const;
+	void OpenJunctionGroupsTab() const;
 
 private:
 	TSharedRef<SDockTab> SpawnRoadListTab(const FSpawnTabArgs& Args);
@@ -45,6 +49,8 @@ private:
 	TSharedRef<SDockTab> SpawnCrossfallTab(const FSpawnTabArgs& Args);
 	TSharedRef<SDockTab> SpawnSignalsTab(const FSpawnTabArgs& Args);
 	TSharedRef<SDockTab> SpawnPlanViewTab(const FSpawnTabArgs& Args);
+	TSharedRef<SDockTab> SpawnObjectsTab(const FSpawnTabArgs& Args);
+	TSharedRef<SDockTab> SpawnJunctionGroupsTab(const FSpawnTabArgs& Args);
 
 	TSharedPtr<FOpenDriveEditorContext> Context;
 	TSharedPtr<FOpenDriveMapVisualizer> Visualizer;

@@ -354,6 +354,7 @@ bool FOpenDriveMap::LoadFromString(const FString& Xml, FString& OutError)
 	Junctions.Reset();
 	JunctionIndex.Reset();
 	Controllers.Reset();
+	JunctionGroups.Reset();
 	Name.Reset();
 
 	FXmlFile File(Xml, EConstructMethod::ConstructFromBuffer);
@@ -626,6 +627,30 @@ bool FOpenDriveMap::LoadFromString(const FString& Xml, FString& OutError)
 			Road.Signals.Sort([](const FOpenDriveSignal& A, const FOpenDriveSignal& B) { return A.S < B.S; });
 		}
 
+		if (const FXmlNode* Objects = ODRXml::Child(RoadNode, TEXT("objects")))
+		{
+			for (const FXmlNode* ObjNode : ODRXml::Children(Objects, TEXT("object")))
+			{
+				FOpenDriveObject Obj;
+				Obj.Id = AttrS(ObjNode, TEXT("id"));
+				Obj.Name = AttrS(ObjNode, TEXT("name"));
+				Obj.Type = AttrS(ObjNode, TEXT("type"));
+				Obj.S = AttrD(ObjNode, TEXT("s"));
+				Obj.T = AttrD(ObjNode, TEXT("t"));
+				Obj.ZOffset = AttrD(ObjNode, TEXT("zOffset"));
+				Obj.HOffset = AttrD(ObjNode, TEXT("hdg"));
+				Obj.Pitch = AttrD(ObjNode, TEXT("pitch"));
+				Obj.Roll = AttrD(ObjNode, TEXT("roll"));
+				Obj.Orientation = ParseOpenDriveSignalOrientation(AttrS(ObjNode, TEXT("orientation")));
+				Obj.Length = AttrD(ObjNode, TEXT("length"));
+				Obj.Width = AttrD(ObjNode, TEXT("width"));
+				Obj.Height = AttrD(ObjNode, TEXT("height"));
+				Obj.Radius = AttrD(ObjNode, TEXT("radius"));
+				Road.Objects.Add(MoveTemp(Obj));
+			}
+			Road.Objects.Sort([](const FOpenDriveObject& A, const FOpenDriveObject& B) { return A.S < B.S; });
+		}
+
 		if (Road.Geometry.Num() == 0)
 		{
 			UE_LOG(LogOpenDrive, Warning, TEXT("OpenDRIVE road '%s' has no geometry and is ignored."), *Road.Id);
@@ -680,6 +705,19 @@ bool FOpenDriveMap::LoadFromString(const FString& Xml, FString& OutError)
 			Controller.Controls.Add(Entry);
 		}
 		Controllers.Add(MoveTemp(Controller));
+	}
+
+	for (const FXmlNode* GroupNode : ODRXml::Children(Root, TEXT("junctionGroup")))
+	{
+		FOpenDriveJunctionGroup Group;
+		Group.Id = AttrS(GroupNode, TEXT("id"));
+		Group.Name = AttrS(GroupNode, TEXT("name"));
+		Group.Type = AttrS(GroupNode, TEXT("type"));
+		for (const FXmlNode* RefNode : ODRXml::Children(GroupNode, TEXT("junctionReference")))
+		{
+			Group.JunctionRefs.Add(AttrS(RefNode, TEXT("junction")));
+		}
+		JunctionGroups.Add(MoveTemp(Group));
 	}
 
 	if (Roads.Num() == 0)
@@ -774,6 +812,16 @@ const FOpenDriveController* FOpenDriveMap::FindController(const FString& Control
 		}
 	}
 	return nullptr;
+}
+
+FOpenDriveJunctionGroup* FOpenDriveMap::FindJunctionGroupMutable(const FString& JunctionGroupId)
+{
+	return JunctionGroups.FindByPredicate([&](const FOpenDriveJunctionGroup& G) { return G.Id == JunctionGroupId; });
+}
+
+const FOpenDriveJunctionGroup* FOpenDriveMap::FindJunctionGroup(const FString& JunctionGroupId) const
+{
+	return JunctionGroups.FindByPredicate([&](const FOpenDriveJunctionGroup& G) { return G.Id == JunctionGroupId; });
 }
 
 // ------------------------------------------------------------------------------------------------

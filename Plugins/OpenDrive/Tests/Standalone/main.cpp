@@ -667,6 +667,84 @@ int main()
 		}
 	}
 
+	// --- Objects & junction groups (Phase 6) -------------------------------------------------------
+	{
+		FOpenDriveMap ObjMap;
+		const FString RoadId = FOpenDriveModelEdit::AddStraightRoad(ObjMap, TEXT("ObjRoad"), 0.0, 0.0, 0.0, 50.0);
+		FOpenDriveRoad* Road = ObjMap.FindRoadMutable(RoadId);
+		Check(Road != nullptr, "objects test: find road");
+		if (Road)
+		{
+			const FString PoleId = FOpenDriveModelEdit::AddRoundObject(*Road, TEXT("pole"), 10.0, -4.0, 0.15, 6.0);
+			Check(!PoleId.IsEmpty(), "AddRoundObject returns an id");
+			const FString TreeId = FOpenDriveModelEdit::AddObject(*Road, TEXT("tree"), 20.0, 6.0, 2.0, 2.0, 8.0);
+			Check(!TreeId.IsEmpty() && TreeId != PoleId, "AddObject returns a distinct id");
+			Check(Road->Objects.Num() == 2, "two objects on the road");
+
+			Check(FOpenDriveModelEdit::SetObjectPose(*Road, PoleId, 12.0, -4.5, 0.0, 0.1), "SetObjectPose succeeds");
+			const FOpenDriveObject* Pole = Road->Objects.FindByPredicate([&](const FOpenDriveObject& O) { return O.Id == PoleId; });
+			Check(Pole != nullptr, "find pole after pose update");
+			if (Pole)
+			{
+				CheckNear(Pole->S, 12.0, 1e-9, "SetObjectPose updates S");
+				CheckNear(Pole->T, -4.5, 1e-9, "SetObjectPose updates T");
+			}
+
+			Check(FOpenDriveModelEdit::RemoveObject(*Road, TreeId), "RemoveObject removes the tree");
+			Check(Road->Objects.Num() == 1, "one object remains after removal");
+			Check(!FOpenDriveModelEdit::RemoveObject(*Road, TreeId), "RemoveObject is a no-op for an already-removed id");
+		}
+
+		// Round trip through the writer/parser: attribute names must match on both sides.
+		const FString Xml = FOpenDriveWriter::Write(ObjMap);
+		Check(Xml.S.find("<objects>") != std::string::npos, "writer emits <objects>");
+		Check(Xml.S.find("radius=") != std::string::npos, "writer emits round-object radius");
+
+		FOpenDriveMap Reparsed;
+		FString ReparseErr;
+		Check(Reparsed.LoadFromString(Xml, ReparseErr), "objects xml reparses");
+		const FOpenDriveRoad* ReparsedRoad = Reparsed.FindRoad(RoadId);
+		Check(ReparsedRoad && ReparsedRoad->Objects.Num() == 1, "reparsed road keeps the surviving object");
+		if (ReparsedRoad && ReparsedRoad->Objects.Num() == 1)
+		{
+			const FOpenDriveObject& Pole = ReparsedRoad->Objects[0];
+			Check(Pole.Type == FString("pole"), "reparsed object type");
+			CheckNear(Pole.S, 12.0, 1e-6, "reparsed object S");
+			CheckNear(Pole.Radius, 0.15, 1e-6, "reparsed object radius");
+			CheckNear(Pole.Height, 6.0, 1e-6, "reparsed object height");
+		}
+
+		// Junction groups.
+		FOpenDriveMap GroupMap;
+		FOpenDriveModelEdit::AddStraightRoad(GroupMap, TEXT("R1"), 0.0, 0.0, 0.0, 10.0);
+		const FString J1 = FOpenDriveModelEdit::AddJunction(GroupMap, TEXT("J1"));
+		const FString J2 = FOpenDriveModelEdit::AddJunction(GroupMap, TEXT("J2"));
+		const FString GroupId = FOpenDriveModelEdit::AddJunctionGroup(GroupMap, TEXT("Roundabout"), TEXT("roundabout"));
+		Check(!GroupId.IsEmpty(), "AddJunctionGroup returns an id");
+		Check(FOpenDriveModelEdit::AddJunctionToGroup(GroupMap, GroupId, J1), "AddJunctionToGroup J1");
+		Check(FOpenDriveModelEdit::AddJunctionToGroup(GroupMap, GroupId, J2), "AddJunctionToGroup J2");
+		Check(!FOpenDriveModelEdit::AddJunctionToGroup(GroupMap, FString("nope"), J1), "AddJunctionToGroup fails for an unknown group");
+		const FOpenDriveJunctionGroup* Group = GroupMap.FindJunctionGroup(GroupId);
+		Check(Group && Group->JunctionRefs.Num() == 2, "junction group has two members");
+		FOpenDriveModelEdit::AddJunctionToGroup(GroupMap, GroupId, J1);
+		Check(Group->JunctionRefs.Num() == 2, "AddJunctionToGroup is idempotent (AddUnique)");
+
+		Check(FOpenDriveModelEdit::RemoveJunctionFromGroup(GroupMap, GroupId, J1), "RemoveJunctionFromGroup J1");
+		Check(Group->JunctionRefs.Num() == 1 && Group->JunctionRefs[0] == J2, "only J2 remains");
+
+		const FString GroupXml = FOpenDriveWriter::Write(GroupMap);
+		Check(GroupXml.S.find("<junctionGroup") != std::string::npos, "writer emits <junctionGroup>");
+		FOpenDriveMap GroupReparsed;
+		FString GroupReparseErr;
+		Check(GroupReparsed.LoadFromString(GroupXml, GroupReparseErr), "junction group xml reparses");
+		const FOpenDriveJunctionGroup* ReparsedGroup = GroupReparsed.FindJunctionGroup(GroupId);
+		Check(ReparsedGroup && ReparsedGroup->Type == FString("roundabout"), "reparsed group type");
+		Check(ReparsedGroup && ReparsedGroup->JunctionRefs.Num() == 1 && ReparsedGroup->JunctionRefs[0] == J2, "reparsed group membership");
+
+		Check(FOpenDriveModelEdit::RemoveJunctionGroup(GroupMap, GroupId), "RemoveJunctionGroup");
+		Check(GroupMap.FindJunctionGroup(GroupId) == nullptr, "junction group removed");
+	}
+
 	// --- Profile <-> points round trip -----------------------------------------------------------
 	{
 		TArray<FOpenDriveCubic> Profile;

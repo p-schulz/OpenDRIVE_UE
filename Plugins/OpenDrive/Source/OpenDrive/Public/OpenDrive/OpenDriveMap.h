@@ -348,6 +348,47 @@ struct OPENDRIVE_API FOpenDriveController
 	TArray<FOpenDriveControllerEntry> Controls;
 };
 
+/**
+ * <road><objects><object>: a static object along the road (pole, tree, barrier, ...). This is a
+ * deliberately reduced sketch of the spec's <object> element -- a single pose/footprint per object, no
+ * <repeat> (guardrail/fence-style repetition along s), no <outline> (custom polygon footprint) and no
+ * parking-space subtype. Those are left for a future pass if the project needs them; a single explicit
+ * object per instance already covers most static-prop placement (signs are FOpenDriveSignal instead).
+ */
+struct OPENDRIVE_API FOpenDriveObject
+{
+	FString Id;
+	FString Name;
+	/** Free-form category from the spec's suggested list (e.g. "pole", "tree", "barrier") or a project's own. */
+	FString Type;
+	double S = 0.0;
+	double T = 0.0;
+	double ZOffset = 0.0;
+	/** Heading relative to the road's reference-line heading at S, radians. */
+	double HOffset = 0.0;
+	double Pitch = 0.0;
+	double Roll = 0.0;
+	/** true = always faces +s regardless of which side of the road it's on ("orientation" attr absent/"none"
+	 *  in the spec is direction-independent; here we only distinguish "has an explicit direction" or not). */
+	EOpenDriveSignalOrientation Orientation = EOpenDriveSignalOrientation::None;
+	/** Bounding-box footprint (metres). Radius is used instead of Length/Width for round objects when > 0. */
+	double Length = 0.0;
+	double Width = 0.0;
+	double Height = 0.0;
+	double Radius = 0.0;
+};
+
+/** Top-level <junctionGroup>: groups junctions that form a single logical intersection (typically a
+ *  roundabout split into several <junction> elements). Sketch-scoped: Type is stored verbatim (usually
+ *  "roundabout") rather than as an enum, since it has no other behavioural meaning in this model. */
+struct OPENDRIVE_API FOpenDriveJunctionGroup
+{
+	FString Id;
+	FString Name;
+	FString Type;
+	TArray<FString> JunctionRefs;
+};
+
 struct OPENDRIVE_API FOpenDriveRoad
 {
 	FString Id;
@@ -380,6 +421,8 @@ struct OPENDRIVE_API FOpenDriveRoad
 	TArray<FOpenDriveRoadTypeEntry> Types;
 	/** Signs and traffic lights ("signals/signal"), sorted by S. */
 	TArray<FOpenDriveSignal> Signals;
+	/** Static objects ("objects/object") -- see FOpenDriveObject. */
+	TArray<FOpenDriveObject> Objects;
 
 	// Derived at load time, used to prune spatial queries.
 	double MinX = 0.0, MinY = 0.0, MaxX = 0.0, MaxY = 0.0;
@@ -458,12 +501,16 @@ public:
 	const TArray<FOpenDriveJunction>& GetJunctions() const { return Junctions; }
 	TArray<FOpenDriveController>& GetControllersMutable() { return Controllers; }
 	const TArray<FOpenDriveController>& GetControllers() const { return Controllers; }
+	TArray<FOpenDriveJunctionGroup>& GetJunctionGroupsMutable() { return JunctionGroups; }
+	const TArray<FOpenDriveJunctionGroup>& GetJunctionGroups() const { return JunctionGroups; }
 	double GetTotalLength() const;
 
 	FOpenDriveRoad* FindRoadMutable(const FString& RoadId);
 	const FOpenDriveRoad* FindRoad(const FString& RoadId) const;
 	const FOpenDriveJunction* FindJunction(const FString& JunctionId) const;
 	const FOpenDriveController* FindController(const FString& ControllerId) const;
+	FOpenDriveJunctionGroup* FindJunctionGroupMutable(const FString& JunctionGroupId);
+	const FOpenDriveJunctionGroup* FindJunctionGroup(const FString& JunctionGroupId) const;
 
 	/** Rebuilds the Id -> index lookup tables and per-road spatial bounds. Call after structural edits. */
 	void RebuildIndex();
@@ -524,4 +571,5 @@ private:
 	TArray<FOpenDriveJunction> Junctions;
 	TMap<FString, int32> JunctionIndex;
 	TArray<FOpenDriveController> Controllers;
+	TArray<FOpenDriveJunctionGroup> JunctionGroups;
 };

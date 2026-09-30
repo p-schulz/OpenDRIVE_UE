@@ -40,6 +40,32 @@ namespace
 		}
 		return FString::FromInt(MaxId + 1);
 	}
+
+	FString MakeUniqueObjectId(const FOpenDriveRoad& Road)
+	{
+		int32 MaxId = 0;
+		for (const FOpenDriveObject& Obj : Road.Objects)
+		{
+			if (Obj.Id.IsNumeric())
+			{
+				MaxId = FMath::Max(MaxId, FCString::Atoi(*Obj.Id));
+			}
+		}
+		return FString::FromInt(MaxId + 1);
+	}
+
+	FString MakeUniqueJunctionGroupId(const FOpenDriveMap& Map)
+	{
+		int32 MaxId = 0;
+		for (const FOpenDriveJunctionGroup& Group : Map.GetJunctionGroups())
+		{
+			if (Group.Id.IsNumeric())
+			{
+				MaxId = FMath::Max(MaxId, FCString::Atoi(*Group.Id));
+			}
+		}
+		return FString::FromInt(MaxId + 1);
+	}
 }
 
 FString FOpenDriveModelEdit::MakeUniqueRoadId(const FOpenDriveMap& Map)
@@ -748,6 +774,100 @@ bool FOpenDriveModelEdit::SetSignalPose(FOpenDriveRoad& Road, const FString& Sig
 		}
 	}
 	return false;
+}
+
+// ------------------------------------------------------------------------------------------------
+// Objects
+// ------------------------------------------------------------------------------------------------
+
+FString FOpenDriveModelEdit::AddObject(FOpenDriveRoad& Road, const FString& Type, double S, double T, double Length, double Width, double Height)
+{
+	FOpenDriveObject Obj;
+	Obj.Id = MakeUniqueObjectId(Road);
+	Obj.Type = Type;
+	Obj.S = S;
+	Obj.T = T;
+	Obj.Length = Length;
+	Obj.Width = Width;
+	Obj.Height = Height;
+	const FString NewId = Obj.Id;
+	Road.Objects.Add(MoveTemp(Obj));
+	Road.Objects.Sort([](const FOpenDriveObject& A, const FOpenDriveObject& B) { return A.S < B.S; });
+	return NewId;
+}
+
+FString FOpenDriveModelEdit::AddRoundObject(FOpenDriveRoad& Road, const FString& Type, double S, double T, double Radius, double Height)
+{
+	FOpenDriveObject Obj;
+	Obj.Id = MakeUniqueObjectId(Road);
+	Obj.Type = Type;
+	Obj.S = S;
+	Obj.T = T;
+	Obj.Radius = Radius;
+	Obj.Height = Height;
+	const FString NewId = Obj.Id;
+	Road.Objects.Add(MoveTemp(Obj));
+	Road.Objects.Sort([](const FOpenDriveObject& A, const FOpenDriveObject& B) { return A.S < B.S; });
+	return NewId;
+}
+
+bool FOpenDriveModelEdit::RemoveObject(FOpenDriveRoad& Road, const FString& ObjectId)
+{
+	return Road.Objects.RemoveAll([&](const FOpenDriveObject& O) { return O.Id == ObjectId; }) > 0;
+}
+
+bool FOpenDriveModelEdit::SetObjectPose(FOpenDriveRoad& Road, const FString& ObjectId, double S, double T, double ZOffset, double HOffsetRad)
+{
+	for (FOpenDriveObject& Obj : Road.Objects)
+	{
+		if (Obj.Id == ObjectId)
+		{
+			Obj.S = S;
+			Obj.T = T;
+			Obj.ZOffset = ZOffset;
+			Obj.HOffset = HOffsetRad;
+			Road.Objects.Sort([](const FOpenDriveObject& A, const FOpenDriveObject& B) { return A.S < B.S; });
+			return true;
+		}
+	}
+	return false;
+}
+
+// ------------------------------------------------------------------------------------------------
+// Junction groups
+// ------------------------------------------------------------------------------------------------
+
+FString FOpenDriveModelEdit::AddJunctionGroup(FOpenDriveMap& Map, const FString& Name, const FString& Type)
+{
+	FOpenDriveJunctionGroup Group;
+	Group.Id = MakeUniqueJunctionGroupId(Map);
+	Group.Name = Name;
+	Group.Type = Type;
+	const FString NewId = Group.Id;
+	Map.GetJunctionGroupsMutable().Add(MoveTemp(Group));
+	return NewId;
+}
+
+bool FOpenDriveModelEdit::RemoveJunctionGroup(FOpenDriveMap& Map, const FString& JunctionGroupId)
+{
+	return Map.GetJunctionGroupsMutable().RemoveAll([&](const FOpenDriveJunctionGroup& G) { return G.Id == JunctionGroupId; }) > 0;
+}
+
+bool FOpenDriveModelEdit::AddJunctionToGroup(FOpenDriveMap& Map, const FString& JunctionGroupId, const FString& JunctionId)
+{
+	FOpenDriveJunctionGroup* Group = Map.FindJunctionGroupMutable(JunctionGroupId);
+	if (!Group)
+	{
+		return false;
+	}
+	Group->JunctionRefs.AddUnique(JunctionId);
+	return true;
+}
+
+bool FOpenDriveModelEdit::RemoveJunctionFromGroup(FOpenDriveMap& Map, const FString& JunctionGroupId, const FString& JunctionId)
+{
+	FOpenDriveJunctionGroup* Group = Map.FindJunctionGroupMutable(JunctionGroupId);
+	return Group && Group->JunctionRefs.Remove(JunctionId) > 0;
 }
 
 // ------------------------------------------------------------------------------------------------
