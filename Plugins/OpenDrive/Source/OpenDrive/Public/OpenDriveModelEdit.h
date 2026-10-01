@@ -3,6 +3,23 @@
 #include "CoreMinimal.h"
 #include "OpenDrive/OpenDriveMap.h"
 
+/** One point around a roundabout's ring where an external road can be connected (see
+ *  FOpenDriveModelEdit::AddRoundabout). */
+struct OPENDRIVE_API FOpenDriveRoundaboutLeg
+{
+	/** The ring segment that starts here -- connect an entering road's end to this segment's start
+	 *  (EOpenDriveContactPoint::Start) so entering traffic joins the circulatory roadway. */
+	FString EntryRingSegmentId;
+	/** The ring segment that ends here -- connect this segment's end (bAtIncomingEnd = true) to an exiting
+	 *  road so traffic leaving the roundabout has somewhere to go. */
+	FString ExitRingSegmentId;
+	double X = 0.0;
+	double Y = 0.0;
+	/** Heading (radians) pointing away from the roundabout's centre. A road meeting the ring here should
+	 *  face back toward the centre, i.e. have a heading of OutwardHeadingRad + PI at its connecting end. */
+	double OutwardHeadingRad = 0.0;
+};
+
 /**
  * Mutation helpers used by the OpenDRIVE editor tool mode. These operate directly on an in-memory
  * FOpenDriveMap ("working copy" pattern, mirroring OpenScenario_UE's FOSCModelEdit): the editor edits
@@ -125,6 +142,23 @@ public:
 	 */
 	static FString AddJunctionConnection(FOpenDriveMap& Map, const FString& JunctionId, const FString& IncomingRoadId, bool bAtIncomingEnd, const FString& ConnectingRoadId, EOpenDriveContactPoint Contact);
 	static bool RemoveJunctionConnection(FOpenDriveMap& Map, const FString& JunctionId, const FString& ConnectionId);
+
+	/**
+	 * Creates a German/European-style roundabout: a one-way circulatory ring split into NumLegs equal arc
+	 * segments around one new junction, each already linked to its neighbours (single "driving" lane per
+	 * segment, travelling counter-clockwise -- correct for right-hand traffic, where circulating vehicles
+	 * keep the centre island on their left). Returns the new junction's Id; OutLegs is filled with one
+	 * entry per leg giving the position/heading an external road should meet the ring at.
+	 *
+	 * This only builds the ring -- it does not create, move or connect any spoke roads, and it does not
+	 * place Yield/roundabout signs (those belong on the entering roads, which don't exist yet at this
+	 * point). Wiring a road in afterwards is an ordinary junction connection: call AddJunctionConnection
+	 * twice (or use the Road List tab's Junction section) -- once with the spoke road as the incoming road
+	 * and the leg's EntryRingSegmentId as the connecting road (entering movement), and once with the leg's
+	 * ExitRingSegmentId as the incoming road (entered at its end) and the spoke road as the connecting road
+	 * (exiting movement).
+	 */
+	static FString AddRoundabout(FOpenDriveMap& Map, const FString& Name, double CenterX, double CenterY, double Radius, int32 NumLegs, double LaneWidth, TArray<FOpenDriveRoundaboutLeg>& OutLegs);
 
 	// --- Signals -------------------------------------------------------------------------------
 	enum class ESignalPreset : uint8 { StopSign, YieldSign, SpeedLimit, TrafficLight };

@@ -760,6 +760,77 @@ int main()
 		Check(GroupMap.FindJunctionGroup(GroupId) == nullptr, "junction group removed");
 	}
 
+	// --- Roundabout authoring ------------------------------------------------------------------------
+	{
+		FOpenDriveMap RabMap;
+		const double CenterX = 100.0, CenterY = 50.0, Radius = 15.0;
+		const int32 NumLegs = 4;
+		TArray<FOpenDriveRoundaboutLeg> Legs;
+		const FString JunctionId = FOpenDriveModelEdit::AddRoundabout(RabMap, TEXT("TestRoundabout"), CenterX, CenterY, Radius, NumLegs, 4.0, Legs);
+		Check(!JunctionId.IsEmpty(), "AddRoundabout returns a junction id");
+		Check(RabMap.GetRoads().Num() == NumLegs, "AddRoundabout creates one ring road per leg");
+		Check(Legs.Num() == NumLegs, "AddRoundabout fills one leg entry per leg");
+
+		const FOpenDriveJunction* Junction = RabMap.FindJunction(JunctionId);
+		Check(Junction && Junction->Connections.Num() == NumLegs, "junction has one connection per ring join");
+
+		double TotalLength = 0.0;
+		for (const FOpenDriveRoad& Ring : RabMap.GetRoads())
+		{
+			Check(Ring.JunctionId == JunctionId, "ring segment is flagged as belonging to the junction");
+			Check(Ring.Geometry.Num() == 1 && Ring.Geometry[0].Type == EOpenDriveGeometryType::Arc, "ring segment is a single arc");
+			CheckNear(Ring.Geometry[0].Curvature, 1.0 / Radius, 1e-9, "ring segment curvature is 1/radius (left turn)");
+			TotalLength += Ring.Length;
+		}
+		CheckNear(TotalLength, 2.0 * M_PI * Radius, 1e-6, "ring segment lengths sum to the full circumference");
+
+		// Continuity: each segment's arc end must land exactly on the next segment's arc start.
+		for (int32 i = 0; i < NumLegs; ++i)
+		{
+			const FOpenDriveRoad* RingA = RabMap.FindRoad(RabMap.GetRoads()[i].Id);
+			const int32 Next = (i + 1) % NumLegs;
+			const FOpenDriveRoad* RingB = RabMap.FindRoad(RabMap.GetRoads()[Next].Id);
+			double EndX, EndY, EndH;
+			RabMap.EvaluateReferenceLine(*RingA, RingA->Length, EndX, EndY, EndH);
+			CheckNear(EndX, RingB->Geometry[0].X, 1e-6, "ring segment end X matches next segment start X");
+			CheckNear(EndY, RingB->Geometry[0].Y, 1e-6, "ring segment end Y matches next segment start Y");
+			// Compare direction, not the raw radian value: heading accumulates without wrapping mod 2*PI, so
+			// the last segment's end heading can legitimately be e.g. 2.5*PI where the next starts at 0.5*PI.
+			CheckNear(std::cos(EndH), std::cos(RingB->Geometry[0].Hdg), 1e-9, "ring segment end heading matches next segment start heading (cos)");
+			CheckNear(std::sin(EndH), std::sin(RingB->Geometry[0].Hdg), 1e-9, "ring segment end heading matches next segment start heading (sin)");
+
+			Check(RingA->SuccessorType == EOpenDriveElementType::Junction && RingA->SuccessorId == JunctionId, "ring segment's successor is the junction");
+			Check(RingA->LaneSections[0].FindLane(-1)->Successor == -1, "ring segment's driving lane links straight through (no flip)");
+		}
+
+		// Routing should walk all the way around through the junction connections.
+		TArray<FOpenDriveRouteStep> Route;
+		Check(RabMap.FindRoute(RabMap.GetRoads()[0].Id, true, RabMap.GetRoads()[2].Id, Route) && Route.Num() == 3, "FindRoute walks halfway around the ring");
+
+		// Legs: position on the circle, outward heading, and correct entry/exit segment references.
+		for (int32 i = 0; i < NumLegs; ++i)
+		{
+			const double Angle = i * (2.0 * M_PI / NumLegs);
+			CheckNear(Legs[i].X, CenterX + Radius * std::cos(Angle), 1e-6, "leg X on the circle");
+			CheckNear(Legs[i].Y, CenterY + Radius * std::sin(Angle), 1e-6, "leg Y on the circle");
+			CheckNear(Legs[i].OutwardHeadingRad, Angle, 1e-9, "leg outward heading matches its angle");
+			Check(Legs[i].EntryRingSegmentId == RabMap.GetRoads()[i].Id, "leg's entry segment is the one starting here");
+			const int32 Prev = (i - 1 + NumLegs) % NumLegs;
+			Check(Legs[i].ExitRingSegmentId == RabMap.GetRoads()[Prev].Id, "leg's exit segment is the one ending here");
+		}
+
+		// Round trip through the writer/parser: a junction with several arc-geometry connecting roads.
+		const FString Xml = FOpenDriveWriter::Write(RabMap);
+		FOpenDriveMap Reparsed;
+		FString ReparseErr;
+		Check(Reparsed.LoadFromString(Xml, ReparseErr), "roundabout xml reparses");
+		Check(Reparsed.GetRoads().Num() == NumLegs, "reparsed roundabout keeps all ring roads");
+		const FOpenDriveJunction* ReparsedJunction = Reparsed.FindJunction(JunctionId);
+		Check(ReparsedJunction && ReparsedJunction->Connections.Num() == NumLegs, "reparsed junction keeps all connections");
+		TArray<FOpenDriveRouteStep> ReparsedRoute;
+		Check(Reparsed.FindRoute(RabMap.GetRoads()[0].Id, true, RabMap.GetRoads()[2].Id, ReparsedRoute) && ReparsedRoute.Num() == 3, "reparsed roundabout still routes correctly");
+	}
+
 	// --- Mesh generation (Phase 7) ------------------------------------------------------------------
 	{
 		Check(FOpenDriveMeshBuilder::ClassifyLaneType(TEXT("driving")) == EOpenDriveMeshMaterialSlot::Asphalt, "ClassifyLaneType: driving -> Asphalt");

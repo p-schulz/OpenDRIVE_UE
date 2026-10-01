@@ -6,6 +6,7 @@
 #include "Authoring/SOpenDrivePlanViewTab.h"
 #include "Authoring/SOpenDriveProfileTab.h"
 #include "Authoring/SOpenDriveRoadListTab.h"
+#include "Authoring/SOpenDriveRoundaboutTab.h"
 #include "Authoring/SOpenDriveSignalsTab.h"
 #include "Editor.h"
 #include "Framework/Application/SlateApplication.h"
@@ -26,6 +27,7 @@ const FName FOpenDriveEditorModule::SignalsTabId(TEXT("OpenDriveSignals"));
 const FName FOpenDriveEditorModule::PlanViewTabId(TEXT("OpenDrivePlanView"));
 const FName FOpenDriveEditorModule::ObjectsTabId(TEXT("OpenDriveObjects"));
 const FName FOpenDriveEditorModule::JunctionGroupsTabId(TEXT("OpenDriveJunctionGroups"));
+const FName FOpenDriveEditorModule::RoundaboutTabId(TEXT("OpenDriveRoundabout"));
 
 FOpenDriveEditorModule& FOpenDriveEditorModule::Get()
 {
@@ -89,6 +91,11 @@ void FOpenDriveEditorModule::StartupModule()
 		.SetDisplayName(LOCTEXT("JunctionGroupsTabTitle", "OpenDRIVE Junction Groups"))
 		.SetTooltipText(LOCTEXT("JunctionGroupsTabTip", "Group junctions that form a single intersection (e.g. a roundabout split into several <junction> elements)"))
 		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory());
+
+	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(RoundaboutTabId, FOnSpawnTab::CreateRaw(this, &FOpenDriveEditorModule::SpawnRoundaboutTab))
+		.SetDisplayName(LOCTEXT("RoundaboutTabTitle", "OpenDRIVE Roundabout"))
+		.SetTooltipText(LOCTEXT("RoundaboutTabTip", "Create a German/European-style roundabout (a one-way circulatory ring around a junction)"))
+		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory());
 }
 
 void FOpenDriveEditorModule::ShutdownModule()
@@ -104,6 +111,7 @@ void FOpenDriveEditorModule::ShutdownModule()
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(PlanViewTabId);
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(ObjectsTabId);
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(JunctionGroupsTabId);
+		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(RoundaboutTabId);
 	}
 	Visualizer.Reset();
 	Context.Reset();
@@ -199,6 +207,16 @@ TSharedRef<SDockTab> FOpenDriveEditorModule::SpawnJunctionGroupsTab(const FSpawn
 		];
 }
 
+TSharedRef<SDockTab> FOpenDriveEditorModule::SpawnRoundaboutTab(const FSpawnTabArgs& Args)
+{
+	return SNew(SDockTab)
+		.TabRole(ETabRole::NomadTab)
+		.Label(LOCTEXT("RoundaboutTabLabel", "OpenDRIVE Roundabout"))
+		[
+			SNew(SOpenDriveRoundaboutTab, *Context)
+		];
+}
+
 void FOpenDriveEditorModule::OpenRoadListTab() const
 {
 	FGlobalTabmanager::Get()->TryInvokeTab(RoadListTabId);
@@ -242,6 +260,11 @@ void FOpenDriveEditorModule::OpenObjectsTab() const
 void FOpenDriveEditorModule::OpenJunctionGroupsTab() const
 {
 	FGlobalTabmanager::Get()->TryInvokeTab(JunctionGroupsTabId);
+}
+
+void FOpenDriveEditorModule::OpenRoundaboutTab() const
+{
+	FGlobalTabmanager::Get()->TryInvokeTab(RoundaboutTabId);
 }
 
 IMPLEMENT_MODULE(FOpenDriveEditorModule, OpenDriveEditor)

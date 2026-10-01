@@ -701,6 +701,92 @@ bool FOpenDriveModelEdit::RemoveJunctionConnection(FOpenDriveMap& Map, const FSt
 	return false;
 }
 
+FString FOpenDriveModelEdit::AddRoundabout(FOpenDriveMap& Map, const FString& Name, double CenterX, double CenterY, double Radius, int32 NumLegs, double LaneWidth, TArray<FOpenDriveRoundaboutLeg>& OutLegs)
+{
+	OutLegs.Reset();
+	NumLegs = FMath::Max(3, NumLegs);
+	Radius = FMath::Max(3.0, Radius);
+	LaneWidth = FMath::Max(2.5, LaneWidth);
+	const FString BaseName = Name.IsEmpty() ? TEXT("Roundabout") : Name;
+
+	const FString JunctionId = AddJunction(Map, BaseName);
+	const double AngleStep = 2.0 * UE_DOUBLE_PI / NumLegs;
+
+	// One road per leg: an arc from this leg's angle to the next, travelling counter-clockwise (heading
+	// increases with s, via positive curvature) -- the direction right-hand-traffic roundabouts circulate
+	// in, keeping the centre island on the driver's left.
+	TArray<FString> RingIds;
+	RingIds.Reserve(NumLegs);
+	for (int32 i = 0; i < NumLegs; ++i)
+	{
+		const double AngleStart = i * AngleStep;
+
+		FOpenDriveRoad Road;
+		Road.Id = MakeUniqueRoadId(Map);
+		Road.Name = FString::Printf(TEXT("%s_Ring%d"), *BaseName, i);
+		Road.JunctionId = JunctionId;
+		Road.Length = Radius * AngleStep;
+
+		FOpenDriveGeometry Geo;
+		Geo.Type = EOpenDriveGeometryType::Arc;
+		Geo.S = 0.0;
+		Geo.X = CenterX + Radius * FMath::Cos(AngleStart);
+		Geo.Y = CenterY + Radius * FMath::Sin(AngleStart);
+		Geo.Hdg = AngleStart + UE_DOUBLE_PI / 2.0;
+		Geo.Length = Road.Length;
+		Geo.Curvature = 1.0 / Radius;
+		Road.Geometry.Add(Geo);
+
+		FOpenDriveLaneSection Section;
+		Section.S = 0.0;
+		Section.EndS = Road.Length;
+
+		FOpenDriveLane Center;
+		Center.Id = 0;
+		Center.Type = TEXT("none");
+		Center.RoadMarks.Add(FOpenDriveRoadMarkEntry{ 0.0, EOpenDriveRoadMarkType::Solid, EOpenDriveRoadMarkWeight::Standard, EOpenDriveRoadMarkColor::Standard, -1.0, EOpenDriveLaneChange::None, 0.0 });
+		Section.Lanes.Add(Center);
+
+		FOpenDriveLane Driving;
+		Driving.Id = -1;
+		Driving.Type = TEXT("driving");
+		Driving.Widths.Add(FOpenDriveCubic{ 0.0, LaneWidth, 0.0, 0.0, 0.0 });
+		Driving.RoadMarks.Add(FOpenDriveRoadMarkEntry{ 0.0, EOpenDriveRoadMarkType::Solid, EOpenDriveRoadMarkWeight::Standard, EOpenDriveRoadMarkColor::Standard, -1.0, EOpenDriveLaneChange::None, 0.0 });
+		Section.Lanes.Add(Driving);
+
+		Road.LaneSections.Add(MoveTemp(Section));
+
+		Map.ComputeRoadBounds(Road);
+		RingIds.Add(Road.Id);
+		Map.GetRoadsMutable().Add(MoveTemp(Road));
+	}
+	Map.RebuildIndex();
+
+	// Link each segment to the next, closing the loop; same single lane on both sides of every join, so no
+	// sign flip (the ring never reverses direction).
+	for (int32 i = 0; i < NumLegs; ++i)
+	{
+		const int32 Next = (i + 1) % NumLegs;
+		AddJunctionConnection(Map, JunctionId, RingIds[i], /*bAtIncomingEnd=*/true, RingIds[Next], EOpenDriveContactPoint::Start);
+	}
+
+	for (int32 i = 0; i < NumLegs; ++i)
+	{
+		const int32 Prev = (i - 1 + NumLegs) % NumLegs;
+		const double Angle = i * AngleStep;
+
+		FOpenDriveRoundaboutLeg Leg;
+		Leg.EntryRingSegmentId = RingIds[i];
+		Leg.ExitRingSegmentId = RingIds[Prev];
+		Leg.X = CenterX + Radius * FMath::Cos(Angle);
+		Leg.Y = CenterY + Radius * FMath::Sin(Angle);
+		Leg.OutwardHeadingRad = Angle;
+		OutLegs.Add(Leg);
+	}
+
+	return JunctionId;
+}
+
 // ------------------------------------------------------------------------------------------------
 // Signals
 // ------------------------------------------------------------------------------------------------

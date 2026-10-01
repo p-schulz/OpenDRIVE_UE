@@ -21,6 +21,7 @@ public:
 	static const FName PlanViewTabId;
 	static const FName ObjectsTabId;
 	static const FName JunctionGroupsTabId;
+	static const FName RoundaboutTabId;
 
 	static FOpenDriveEditorModule& Get();
 
@@ -40,6 +41,7 @@ public:
 	void OpenPlanViewTab() const;
 	void OpenObjectsTab() const;
 	void OpenJunctionGroupsTab() const;
+	void OpenRoundaboutTab() const;
 
 private:
 	TSharedRef<SDockTab> SpawnRoadListTab(const FSpawnTabArgs& Args);
@@ -51,6 +53,7 @@ private:
 	TSharedRef<SDockTab> SpawnPlanViewTab(const FSpawnTabArgs& Args);
 	TSharedRef<SDockTab> SpawnObjectsTab(const FSpawnTabArgs& Args);
 	TSharedRef<SDockTab> SpawnJunctionGroupsTab(const FSpawnTabArgs& Args);
+	TSharedRef<SDockTab> SpawnRoundaboutTab(const FSpawnTabArgs& Args);
 
 	TSharedPtr<FOpenDriveEditorContext> Context;
 	TSharedPtr<FOpenDriveMapVisualizer> Visualizer;
