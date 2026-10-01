@@ -137,6 +137,11 @@ void SOpenDriveModePanel::Construct(const FArguments& InArgs, FOpenDriveEditorCo
 					]
 					+ SWrapBox::Slot().Padding(0.f, 0.f, 4.f, 4.f)
 					[
+						MakeButton(LOCTEXT("Roundabout", "Roundabout"), LOCTEXT("RoundaboutTip", "Open the dockable roundabout generator (one-click German/European-style circulatory ring)"),
+							[]() { FOpenDriveEditorModule::Get().OpenRoundaboutTab(); return FReply::Handled(); }, Always)
+					]
+					+ SWrapBox::Slot().Padding(0.f, 0.f, 4.f, 4.f)
+					[
 						MakeButton(LOCTEXT("GenerateMeshes", "Generate Meshes"), LOCTEXT("GenerateMeshesTip", "Build/update a live preview mesh (AOpenDriveRoadMeshActor) for every road in the level"),
 							[this]() { return OnGenerateMeshes(); }, HasAsset)
 					]
