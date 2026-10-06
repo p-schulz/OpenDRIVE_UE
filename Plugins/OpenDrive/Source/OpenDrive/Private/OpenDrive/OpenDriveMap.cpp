@@ -69,6 +69,20 @@ namespace
 		OutContact = ParseContact(AttrS(N, TEXT("contactPoint")));
 	}
 
+	/** <validity fromLane toLane/> children, shared by <signal> and <signalReference>. */
+	TArray<FOpenDriveSignalValidity> ParseValidity(const FXmlNode* Parent)
+	{
+		TArray<FOpenDriveSignalValidity> Out;
+		for (const FXmlNode* V : ODRXml::Children(Parent, TEXT("validity")))
+		{
+			FOpenDriveSignalValidity Entry;
+			Entry.FromLane = FCString::Atoi(*AttrS(V, TEXT("fromLane")));
+			Entry.ToLane = FCString::Atoi(*AttrS(V, TEXT("toLane")));
+			Out.Add(Entry);
+		}
+		return Out;
+	}
+
 	/** Position on a single geometry element at local arc length U (0..Length). */
 	void EvalGeometry(const FOpenDriveGeometry& G, double U, double& X, double& Y, double& H)
 	{
@@ -319,6 +333,25 @@ FString OpenDriveSignalOrientationToString(EOpenDriveSignalOrientation Value)
 	case EOpenDriveSignalOrientation::None:
 	default:
 		return TEXT("none");
+	}
+}
+
+EOpenDriveJunctionType ParseOpenDriveJunctionType(const FString& S)
+{
+	if (S.Equals(TEXT("virtual"), ESearchCase::IgnoreCase)) { return EOpenDriveJunctionType::Virtual; }
+	if (S.Equals(TEXT("direct"), ESearchCase::IgnoreCase)) { return EOpenDriveJunctionType::Direct; }
+	return EOpenDriveJunctionType::Default;
+}
+
+FString OpenDriveJunctionTypeToString(EOpenDriveJunctionType Value)
+{
+	switch (Value)
+	{
+	case EOpenDriveJunctionType::Virtual: return TEXT("virtual");
+	case EOpenDriveJunctionType::Direct: return TEXT("direct");
+	case EOpenDriveJunctionType::Default:
+	default:
+		return TEXT("default");
 	}
 }
 
@@ -622,9 +655,22 @@ bool FOpenDriveMap::LoadFromString(const FString& Xml, FString& OutError)
 				Sig.HOffset = AttrD(SigNode, TEXT("hOffset"));
 				Sig.Pitch = AttrD(SigNode, TEXT("pitch"));
 				Sig.Roll = AttrD(SigNode, TEXT("roll"));
+				Sig.Validity = ParseValidity(SigNode);
 				Road.Signals.Add(MoveTemp(Sig));
 			}
 			Road.Signals.Sort([](const FOpenDriveSignal& A, const FOpenDriveSignal& B) { return A.S < B.S; });
+
+			for (const FXmlNode* RefNode : ODRXml::Children(Signals, TEXT("signalReference")))
+			{
+				FOpenDriveSignalReference Ref;
+				Ref.SignalId = AttrS(RefNode, TEXT("id"));
+				Ref.S = AttrD(RefNode, TEXT("s"));
+				Ref.T = AttrD(RefNode, TEXT("t"));
+				Ref.Orientation = ParseOpenDriveSignalOrientation(AttrS(RefNode, TEXT("orientation")));
+				Ref.Validity = ParseValidity(RefNode);
+				Road.SignalReferences.Add(MoveTemp(Ref));
+			}
+			Road.SignalReferences.Sort([](const FOpenDriveSignalReference& A, const FOpenDriveSignalReference& B) { return A.S < B.S; });
 		}
 
 		if (const FXmlNode* Objects = ODRXml::Child(RoadNode, TEXT("objects")))
@@ -671,6 +717,7 @@ bool FOpenDriveMap::LoadFromString(const FString& Xml, FString& OutError)
 		FOpenDriveJunction Junction;
 		Junction.Id = AttrS(JuncNode, TEXT("id"));
 		Junction.Name = AttrS(JuncNode, TEXT("name"));
+		Junction.Type = ParseOpenDriveJunctionType(AttrS(JuncNode, TEXT("type")));
 		for (const FXmlNode* ConNode : ODRXml::Children(JuncNode, TEXT("connection")))
 		{
 			FOpenDriveJunctionConnection Con;
@@ -687,6 +734,21 @@ bool FOpenDriveMap::LoadFromString(const FString& Xml, FString& OutError)
 				Con.LaneLinks.Emplace(FCString::Atoi(*AttrS(LL, TEXT("from"))), FCString::Atoi(*AttrS(LL, TEXT("to"))));
 			}
 			Junction.Connections.Add(MoveTemp(Con));
+		}
+		for (const FXmlNode* PrioNode : ODRXml::Children(JuncNode, TEXT("priority")))
+		{
+			FOpenDriveJunctionPriority Prio;
+			Prio.High = AttrS(PrioNode, TEXT("high"));
+			Prio.Low = AttrS(PrioNode, TEXT("low"));
+			Junction.Priorities.Add(MoveTemp(Prio));
+		}
+		for (const FXmlNode* CtrlRefNode : ODRXml::Children(JuncNode, TEXT("controller")))
+		{
+			FOpenDriveJunctionControllerRef CtrlRef;
+			CtrlRef.ControllerId = AttrS(CtrlRefNode, TEXT("id"));
+			CtrlRef.Type = AttrS(CtrlRefNode, TEXT("type"));
+			CtrlRef.Sequence = FCString::Atoi(*AttrS(CtrlRefNode, TEXT("sequence")));
+			Junction.ControllerRefs.Add(MoveTemp(CtrlRef));
 		}
 		JunctionIndex.Add(Junction.Id, Junctions.Num());
 		Junctions.Add(MoveTemp(Junction));
@@ -1404,4 +1466,88 @@ bool FOpenDriveMap::FindRoute(const FString& StartRoadId, bool bStartForward, co
 	}
 	Algo::Reverse(OutRoute);
 	return true;
+}
+
+// ------------------------------------------------------------------------------------------------
+// Signals & junction priority
+// ------------------------------------------------------------------------------------------------
+
+bool FOpenDriveMap::ResolveSignalReference(const FOpenDriveSignalReference& Reference, const FOpenDriveSignal*& OutSignal, const FOpenDriveRoad*& OutOwningRoad) const
+{
+	OutSignal = nullptr;
+	OutOwningRoad = nullptr;
+	for (const FOpenDriveRoad& Road : Roads)
+	{
+		for (const FOpenDriveSignal& Sig : Road.Signals)
+		{
+			if (Sig.Id == Reference.SignalId)
+			{
+				OutSignal = &Sig;
+				OutOwningRoad = &Road;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+void FOpenDriveMap::GetControllersForSignal(const FString& SignalId, TArray<const FOpenDriveController*>& OutControllers) const
+{
+	OutControllers.Reset();
+	for (const FOpenDriveController& Controller : Controllers)
+	{
+		for (const FOpenDriveControllerEntry& Entry : Controller.Controls)
+		{
+			if (Entry.SignalId == SignalId)
+			{
+				OutControllers.Add(&Controller);
+				break;
+			}
+		}
+	}
+}
+
+bool FOpenDriveMap::HasPriority(const FString& JunctionId, const FString& RoadA, const FString& RoadB, bool& bAHigher) const
+{
+	const FOpenDriveJunction* Junction = FindJunction(JunctionId);
+	if (!Junction)
+	{
+		return false;
+	}
+	for (const FOpenDriveJunctionPriority& Prio : Junction->Priorities)
+	{
+		if (Prio.High == RoadA && Prio.Low == RoadB)
+		{
+			bAHigher = true;
+			return true;
+		}
+		if (Prio.High == RoadB && Prio.Low == RoadA)
+		{
+			bAHigher = false;
+			return true;
+		}
+	}
+	return false;
+}
+
+void FOpenDriveMap::GetConflictingConnections(const FString& JunctionId, const FString& ConnectionId, TArray<FString>& OutConnectionIds) const
+{
+	OutConnectionIds.Reset();
+	const FOpenDriveJunction* Junction = FindJunction(JunctionId);
+	if (!Junction)
+	{
+		return;
+	}
+	const FOpenDriveJunctionConnection* Self = Junction->Connections.FindByPredicate([&](const FOpenDriveJunctionConnection& C) { return C.Id == ConnectionId; });
+	if (!Self)
+	{
+		return;
+	}
+	for (const FOpenDriveJunctionConnection& Other : Junction->Connections)
+	{
+		if (Other.Id != ConnectionId && Other.IncomingRoad != Self->IncomingRoad)
+		{
+			OutConnectionIds.Add(Other.Id);
+		}
+	}
 }

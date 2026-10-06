@@ -39,6 +39,15 @@ namespace
 		}
 	}
 
+	/** <validity fromLane toLane/> children, shared by <signal> and <signalReference>. */
+	void WriteValidity(FString& Out, const TArray<FOpenDriveSignalValidity>& Entries, const TCHAR* Indent)
+	{
+		for (const FOpenDriveSignalValidity& V : Entries)
+		{
+			Out += FString::Printf(TEXT("%s<validity fromLane=\"%d\" toLane=\"%d\"/>\n"), Indent, V.FromLane, V.ToLane);
+		}
+	}
+
 	void WriteLink(FString& Out, const TCHAR* Tag, EOpenDriveElementType Type, const FString& Id, EOpenDriveContactPoint Contact)
 	{
 		if (Type == EOpenDriveElementType::None || Id.IsEmpty())
@@ -247,7 +256,7 @@ FString FOpenDriveWriter::Write(const FOpenDriveMap& Map)
 		}
 		Out += TEXT("\t\t</lanes>\n");
 
-		if (Road.Signals.Num() > 0)
+		if (Road.Signals.Num() > 0 || Road.SignalReferences.Num() > 0)
 		{
 			Out += TEXT("\t\t<signals>\n");
 			for (const FOpenDriveSignal& Sig : Road.Signals)
@@ -255,13 +264,34 @@ FString FOpenDriveWriter::Write(const FOpenDriveMap& Map)
 				Out += FString::Printf(TEXT("\t\t\t<signal s=\"%s\" t=\"%s\" id=\"%s\" name=\"%s\" dynamic=\"%s\" orientation=\"%s\" zOffset=\"%s\" country=\"%s\" type=\"%s\" subtype=\"%s\" value=\"%s\" unit=\"%s\" height=\"%s\" width=\"%s\" hOffset=\"%s\" pitch=\"%s\" roll=\"%s\""),
 					*D(Sig.S), *D(Sig.T), *Esc(Sig.Id), *Esc(Sig.Name), Sig.bDynamic ? TEXT("yes") : TEXT("no"), *OpenDriveSignalOrientationToString(Sig.Orientation),
 					*D(Sig.ZOffset), *Esc(Sig.Country), *Esc(Sig.Type), *Esc(Sig.Subtype), *D(Sig.Value), *Esc(Sig.Unit), *D(Sig.Height), *D(Sig.Width), *D(Sig.HOffset), *D(Sig.Pitch), *D(Sig.Roll));
-				if (Sig.Text.IsEmpty())
+				if (!Sig.Text.IsEmpty())
+				{
+					Out += FString::Printf(TEXT(" text=\"%s\""), *Esc(Sig.Text));
+				}
+				if (Sig.Validity.Num() == 0)
 				{
 					Out += TEXT("/>\n");
 				}
 				else
 				{
-					Out += FString::Printf(TEXT(" text=\"%s\"/>\n"), *Esc(Sig.Text));
+					Out += TEXT(">\n");
+					WriteValidity(Out, Sig.Validity, TEXT("\t\t\t\t"));
+					Out += TEXT("\t\t\t</signal>\n");
+				}
+			}
+			for (const FOpenDriveSignalReference& Ref : Road.SignalReferences)
+			{
+				Out += FString::Printf(TEXT("\t\t\t<signalReference s=\"%s\" t=\"%s\" id=\"%s\" orientation=\"%s\""),
+					*D(Ref.S), *D(Ref.T), *Esc(Ref.SignalId), *OpenDriveSignalOrientationToString(Ref.Orientation));
+				if (Ref.Validity.Num() == 0)
+				{
+					Out += TEXT("/>\n");
+				}
+				else
+				{
+					Out += TEXT(">\n");
+					WriteValidity(Out, Ref.Validity, TEXT("\t\t\t\t"));
+					Out += TEXT("\t\t\t</signalReference>\n");
 				}
 			}
 			Out += TEXT("\t\t</signals>\n");
@@ -291,7 +321,7 @@ FString FOpenDriveWriter::Write(const FOpenDriveMap& Map)
 
 	for (const FOpenDriveJunction& Junction : Map.GetJunctions())
 	{
-		Out += FString::Printf(TEXT("\t<junction name=\"%s\" id=\"%s\">\n"), *Esc(Junction.Name), *Esc(Junction.Id));
+		Out += FString::Printf(TEXT("\t<junction name=\"%s\" id=\"%s\" type=\"%s\">\n"), *Esc(Junction.Name), *Esc(Junction.Id), *OpenDriveJunctionTypeToString(Junction.Type));
 		for (const FOpenDriveJunctionConnection& Con : Junction.Connections)
 		{
 			const TCHAR* ContactStr = (Con.ContactPoint == EOpenDriveContactPoint::End) ? TEXT("end") : TEXT("start");
@@ -302,6 +332,15 @@ FString FOpenDriveWriter::Write(const FOpenDriveMap& Map)
 				Out += FString::Printf(TEXT("\t\t\t<laneLink from=\"%d\" to=\"%d\"/>\n"), Link.Key, Link.Value);
 			}
 			Out += TEXT("\t\t</connection>\n");
+		}
+		for (const FOpenDriveJunctionPriority& Prio : Junction.Priorities)
+		{
+			Out += FString::Printf(TEXT("\t\t<priority high=\"%s\" low=\"%s\"/>\n"), *Esc(Prio.High), *Esc(Prio.Low));
+		}
+		for (const FOpenDriveJunctionControllerRef& CtrlRef : Junction.ControllerRefs)
+		{
+			const FString TypeAttr = CtrlRef.Type.IsEmpty() ? FString() : FString::Printf(TEXT(" type=\"%s\""), *Esc(CtrlRef.Type));
+			Out += FString::Printf(TEXT("\t\t<controller id=\"%s\"%s sequence=\"%d\"/>\n"), *Esc(CtrlRef.ControllerId), *TypeAttr, CtrlRef.Sequence);
 		}
 		Out += TEXT("\t</junction>\n");
 	}

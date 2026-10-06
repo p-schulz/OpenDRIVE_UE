@@ -302,6 +302,16 @@ enum class EOpenDriveSignalOrientation : uint8 { Plus, Minus, None };
 OPENDRIVE_API EOpenDriveSignalOrientation ParseOpenDriveSignalOrientation(const FString& S);
 OPENDRIVE_API FString OpenDriveSignalOrientationToString(EOpenDriveSignalOrientation Value);
 
+/** <signal><validity fromLane toLane/> or <signalReference><validity fromLane toLane/>: restricts which
+ *  lanes the signal/reference governs to [FromLane, ToLane] (inclusive; order-independent, and signed like
+ *  any other lane id -- negative for right lanes, positive for left, 0 for the centre lane). A signal can
+ *  carry several of these (e.g. two disjoint ranges); see FOpenDriveSignal::AppliesToLane. */
+struct OPENDRIVE_API FOpenDriveSignalValidity
+{
+	int32 FromLane = 0;
+	int32 ToLane = 0;
+};
+
 /**
  * <road><signals><signal>: a traffic sign or light. Type/Subtype/Country follow the ASAM/Vienna Convention
  * codes the spec's own examples use (e.g. Country "DE", Type "206" = stop sign) -- the editor's presets
@@ -329,6 +339,42 @@ struct OPENDRIVE_API FOpenDriveSignal
 	double HOffset = 0.0;
 	double Pitch = 0.0;
 	double Roll = 0.0;
+	/** <validity> children; empty means the signal applies to every lane of its road (see AppliesToLane). */
+	TArray<FOpenDriveSignalValidity> Validity;
+
+	/** True if the signal applies to LaneId: always true when Validity is empty (no <validity> element
+	 *  means "all lanes"), otherwise true if LaneId falls inside any one [FromLane, ToLane] range. */
+	bool AppliesToLane(int32 LaneId) const
+	{
+		if (Validity.Num() == 0)
+		{
+			return true;
+		}
+		for (const FOpenDriveSignalValidity& V : Validity)
+		{
+			if (LaneId >= FMath::Min(V.FromLane, V.ToLane) && LaneId <= FMath::Max(V.FromLane, V.ToLane))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+};
+
+/**
+ * <road><signals><signalReference id s t orientation>: places an already-defined signal (identified by
+ * Id, usually declared on a different road) at an additional (s, t) with its own orientation and lane
+ * validity -- e.g. one traffic light signalling several approaches of a junction, or a sign that also
+ * governs a road other than the one its <signal> element lives on. Resolve with
+ * FOpenDriveMap::ResolveSignalReference.
+ */
+struct OPENDRIVE_API FOpenDriveSignalReference
+{
+	FString SignalId;
+	double S = 0.0;
+	double T = 0.0;
+	EOpenDriveSignalOrientation Orientation = EOpenDriveSignalOrientation::None;
+	TArray<FOpenDriveSignalValidity> Validity;
 };
 
 /** <controller><control signalId="..."/>: one signal this controller drives (e.g. one phase of a light). */
@@ -421,6 +467,8 @@ struct OPENDRIVE_API FOpenDriveRoad
 	TArray<FOpenDriveRoadTypeEntry> Types;
 	/** Signs and traffic lights ("signals/signal"), sorted by S. */
 	TArray<FOpenDriveSignal> Signals;
+	/** "signals/signalReference", sorted by S -- see FOpenDriveSignalReference. */
+	TArray<FOpenDriveSignalReference> SignalReferences;
 	/** Static objects ("objects/object") -- see FOpenDriveObject. */
 	TArray<FOpenDriveObject> Objects;
 
@@ -441,11 +489,46 @@ struct OPENDRIVE_API FOpenDriveJunctionConnection
 	TArray<TPair<int32, int32>> LaneLinks;
 };
 
+/** <junction type="...">: default is an ordinary at-grade intersection with explicit <connection> roads
+ *  (everything this model authors and the common case for imported files); virtual is a junction the spec
+ *  lets a tool synthesise where two roads overlap without their own connecting geometry; direct is a
+ *  free-flow connection (e.g. a highway lane split/merge) whose "connecting road" carries the same
+ *  superelevation/shape as both sides rather than being routed through a ring. Virtual/direct are parsed
+ *  and round-tripped like any other attribute, but nothing else in this model treats them specially. */
+enum class EOpenDriveJunctionType : uint8 { Default, Virtual, Direct };
+
+OPENDRIVE_API EOpenDriveJunctionType ParseOpenDriveJunctionType(const FString& S);
+OPENDRIVE_API FString OpenDriveJunctionTypeToString(EOpenDriveJunctionType Value);
+
+/** <junction><priority high low/>: High has the right of way over Low. Both are connecting-road ids (the
+ *  roads inside the junction, referenced by FOpenDriveJunctionConnection::ConnectingRoad) -- matching the
+ *  spec, not incoming-road ids. See FOpenDriveMap::HasPriority. */
+struct OPENDRIVE_API FOpenDriveJunctionPriority
+{
+	FString High;
+	FString Low;
+};
+
+/** <junction><controller id type sequence/>: a top-level FOpenDriveController that applies to this
+ *  junction -- distinct from FOpenDriveControllerEntry, which lists the signals one controller drives.
+ *  Sequence orders multiple controllers at the same junction (e.g. staged signal programs), lowest first. */
+struct OPENDRIVE_API FOpenDriveJunctionControllerRef
+{
+	FString ControllerId;
+	FString Type;
+	int32 Sequence = 0;
+};
+
 struct OPENDRIVE_API FOpenDriveJunction
 {
 	FString Id;
 	FString Name;
+	EOpenDriveJunctionType Type = EOpenDriveJunctionType::Default;
 	TArray<FOpenDriveJunctionConnection> Connections;
+	/** <priority> children, sibling to <connection> -- see FOpenDriveJunctionPriority. */
+	TArray<FOpenDriveJunctionPriority> Priorities;
+	/** <controller> children, sibling to <connection> -- see FOpenDriveJunctionControllerRef. */
+	TArray<FOpenDriveJunctionControllerRef> ControllerRefs;
 };
 
 struct FOpenDrivePose
@@ -558,6 +641,31 @@ public:
 	 * direction, to any traversal of TargetRoad. The first step is always the start road.
 	 */
 	bool FindRoute(const FString& StartRoadId, bool bStartForward, const FString& TargetRoadId, TArray<FOpenDriveRouteStep>& OutRoute) const;
+
+	// --- Signals & junction priority --------------------------------------------------------------
+	/** Resolves a <signalReference> to the FOpenDriveSignal it points at (by Reference.SignalId) and that
+	 *  signal's owning road. Returns false if no <signal> with that id exists anywhere in the map. */
+	bool ResolveSignalReference(const FOpenDriveSignalReference& Reference, const FOpenDriveSignal*& OutSignal, const FOpenDriveRoad*& OutOwningRoad) const;
+	/** Every top-level FOpenDriveController that drives SignalId (lists it in a <control>), so a traffic
+	 *  light's whole phase group can be found without scanning every controller. Usually at most one, but
+	 *  the spec does not forbid a signal being listed by more than one controller. */
+	void GetControllersForSignal(const FString& SignalId, TArray<const FOpenDriveController*>& OutControllers) const;
+	/**
+	 * Right-of-way between two connecting roads of the same junction, from a <priority> entry (RoadA/RoadB
+	 * in either order). Returns false, leaving bAHigher unchanged, if JunctionId is unknown or no
+	 * <priority> entry names this pair -- the spec leaves undeclared pairs unspecified, so callers should
+	 * fall back to their own rule (e.g. yield to through traffic) rather than assume equal priority.
+	 */
+	bool HasPriority(const FString& JunctionId, const FString& RoadA, const FString& RoadB, bool& bAHigher) const;
+	/**
+	 * Every other connection of JunctionId whose incoming road differs from ConnectionId's own -- i.e.
+	 * every movement that could cross it, not just the pairs a <priority> entry happens to name. This is a
+	 * conservative over-approximation: it does not check whether the paths actually cross, so it is meant
+	 * as a candidate set a caller then narrows with HasPriority or its own geometry, not a precise conflict
+	 * matrix. Connections sharing the same incoming road (parallel movements from one approach, e.g. a
+	 * through and a right-turn lane) are excluded, since they never conflict with each other.
+	 */
+	void GetConflictingConnections(const FString& JunctionId, const FString& ConnectionId, TArray<FString>& OutConnectionIds) const;
 
 	/** Recomputes the world-space bounds and cross-section extent of a single road. Call after editing its geometry or lanes. */
 	void ComputeRoadBounds(FOpenDriveRoad& Road) const;
