@@ -196,6 +196,154 @@ namespace
 		Check(SigMap.FindController(FString("1")) != nullptr, (FString("FindController (") + Tag + ")").S.c_str());
 	}
 
+	const char* ValidityPriorityXodr()
+	{
+		return R"XODR(<?xml version="1.0"?>
+<OpenDRIVE>
+	<header name="ValidityPriorityTest" />
+	<road name="A" length="40.0" id="1" junction="-1">
+		<planView>
+			<geometry s="0" x="0" y="0" hdg="0" length="40">
+				<line/>
+			</geometry>
+		</planView>
+		<lanes>
+			<laneSection s="0">
+				<left>
+					<lane id="1" type="driving" level="false">
+						<width sOffset="0" a="3.5" b="0" c="0" d="0"/>
+					</lane>
+				</left>
+				<center>
+					<lane id="0" type="none" level="false"/>
+				</center>
+				<right>
+					<lane id="-1" type="driving" level="false">
+						<width sOffset="0" a="3.5" b="0" c="0" d="0"/>
+					</lane>
+				</right>
+			</laneSection>
+		</lanes>
+		<signals>
+			<signal s="20" t="-4.5" id="1" name="Light" dynamic="yes" orientation="+" zOffset="0" country="OpenDRIVE" type="1000001" subtype="1" value="0" unit="" height="3" width="0.3" hOffset="0" pitch="0" roll="0">
+				<validity fromLane="-1" toLane="-1"/>
+				<validity fromLane="1" toLane="1"/>
+			</signal>
+		</signals>
+	</road>
+	<road name="B" length="30.0" id="2" junction="-1">
+		<planView>
+			<geometry s="0" x="100" y="0" hdg="0" length="30">
+				<line/>
+			</geometry>
+		</planView>
+		<lanes>
+			<laneSection s="0">
+				<center>
+					<lane id="0" type="none" level="false"/>
+				</center>
+				<right>
+					<lane id="-1" type="driving" level="false">
+						<width sOffset="0" a="3.5" b="0" c="0" d="0"/>
+					</lane>
+				</right>
+			</laneSection>
+		</lanes>
+		<signals>
+			<signalReference s="5" t="-4.5" id="1" orientation="+">
+				<validity fromLane="-1" toLane="-1"/>
+			</signalReference>
+		</signals>
+	</road>
+	<road name="C" length="30.0" id="3" junction="-1">
+		<planView>
+			<geometry s="0" x="200" y="0" hdg="0" length="30">
+				<line/>
+			</geometry>
+		</planView>
+		<lanes>
+			<laneSection s="0">
+				<center>
+					<lane id="0" type="none" level="false"/>
+				</center>
+				<right>
+					<lane id="-1" type="driving" level="false">
+						<width sOffset="0" a="3.5" b="0" c="0" d="0"/>
+					</lane>
+				</right>
+			</laneSection>
+		</lanes>
+	</road>
+	<junction id="100" name="Test" type="direct">
+		<connection id="1" incomingRoad="1" connectingRoad="2" contactPoint="start">
+			<laneLink from="-1" to="-1"/>
+		</connection>
+		<connection id="2" incomingRoad="1" connectingRoad="3" contactPoint="start">
+			<laneLink from="-1" to="-1"/>
+		</connection>
+		<connection id="3" incomingRoad="2" connectingRoad="3" contactPoint="start">
+			<laneLink from="-1" to="-1"/>
+		</connection>
+		<priority high="2" low="3"/>
+		<controller id="1" type="" sequence="0"/>
+	</junction>
+	<controller id="1" name="MainLight">
+		<control signalId="1" type=""/>
+	</controller>
+</OpenDRIVE>
+)XODR";
+	}
+
+	void CheckValidityAndPriority(const FOpenDriveMap& VPMap, const char* Tag)
+	{
+		const FOpenDriveRoad* RoadA = VPMap.FindRoad(FString("1"));
+		Check(RoadA != nullptr, (FString("find road 1 (") + Tag + ")").S.c_str());
+		if (RoadA && RoadA->Signals.Num() == 1)
+		{
+			const FOpenDriveSignal& Sig = RoadA->Signals[0];
+			Check(Sig.Validity.Num() == 2, (FString("signal has two validity ranges (") + Tag + ")").S.c_str());
+			Check(Sig.AppliesToLane(-1) && Sig.AppliesToLane(1) && !Sig.AppliesToLane(0) && !Sig.AppliesToLane(2),
+				(FString("AppliesToLane respects the parsed ranges (") + Tag + ")").S.c_str());
+		}
+		else
+		{
+			Check(false, (FString("road 1 has one signal (") + Tag + ")").S.c_str());
+		}
+
+		const FOpenDriveRoad* RoadB = VPMap.FindRoad(FString("2"));
+		Check(RoadB != nullptr && RoadB->SignalReferences.Num() == 1, (FString("road 2 has one signal reference (") + Tag + ")").S.c_str());
+		if (RoadB && RoadB->SignalReferences.Num() == 1)
+		{
+			const FOpenDriveSignalReference& Ref = RoadB->SignalReferences[0];
+			Check(Ref.SignalId == FString("1") && Ref.Validity.Num() == 1, (FString("signal reference fields (") + Tag + ")").S.c_str());
+			const FOpenDriveSignal* ResolvedSig = nullptr;
+			const FOpenDriveRoad* ResolvedRoad = nullptr;
+			Check(VPMap.ResolveSignalReference(Ref, ResolvedSig, ResolvedRoad) && ResolvedSig == &RoadA->Signals[0] && ResolvedRoad == RoadA,
+				(FString("ResolveSignalReference finds the signal and its owning road (") + Tag + ")").S.c_str());
+		}
+
+		const FOpenDriveJunction* Junction = VPMap.FindJunction(FString("100"));
+		Check(Junction != nullptr, (FString("find junction 100 (") + Tag + ")").S.c_str());
+		if (Junction)
+		{
+			Check(Junction->Type == EOpenDriveJunctionType::Direct, (FString("junction type parsed (") + Tag + ")").S.c_str());
+			Check(Junction->Priorities.Num() == 1 && Junction->Priorities[0].High == FString("2") && Junction->Priorities[0].Low == FString("3"),
+				(FString("junction priority parsed (") + Tag + ")").S.c_str());
+			Check(Junction->ControllerRefs.Num() == 1 && Junction->ControllerRefs[0].ControllerId == FString("1"),
+				(FString("junction controller ref parsed (") + Tag + ")").S.c_str());
+		}
+
+		bool bAHigher = false;
+		Check(VPMap.HasPriority(FString("100"), FString("2"), FString("3"), bAHigher) && bAHigher,
+			(FString("HasPriority: declared order (") + Tag + ")").S.c_str());
+		Check(VPMap.HasPriority(FString("100"), FString("3"), FString("2"), bAHigher) && !bAHigher,
+			(FString("HasPriority: reversed order (") + Tag + ")").S.c_str());
+
+		TArray<const FOpenDriveController*> Controllers;
+		VPMap.GetControllersForSignal(FString("1"), Controllers);
+		Check(Controllers.Num() == 1 && Controllers[0]->Id == FString("1"), (FString("GetControllersForSignal (") + Tag + ")").S.c_str());
+	}
+
 	const char* CrossfallXodr()
 	{
 		return R"XODR(<?xml version="1.0"?>
@@ -509,6 +657,85 @@ int main()
 		{
 			Check(false, "find road 9 for signal model-edit checks");
 		}
+	}
+
+	// --- Signal validity, signal references & junction priority: parse + writer round trip --------
+	{
+		FOpenDriveMap VPMap;
+		FString VPErr;
+		Check(VPMap.LoadFromString(ValidityPriorityXodr(), VPErr), "parse validity/priority xodr");
+		CheckValidityAndPriority(VPMap, "parsed");
+
+		const FString VPWritten = FOpenDriveWriter::Write(VPMap);
+		Check(VPWritten.S.find("<validity ") != std::string::npos, "writer emits validity");
+		Check(VPWritten.S.find("<signalReference ") != std::string::npos, "writer emits signalReference");
+		Check(VPWritten.S.find("<priority ") != std::string::npos, "writer emits priority");
+		Check(VPWritten.S.find("type=\"direct\"") != std::string::npos, "writer emits junction type");
+
+		FOpenDriveMap VPReparsed;
+		FString VPReparseErr;
+		Check(VPReparsed.LoadFromString(VPWritten, VPReparseErr), "reparse validity/priority xodr");
+		CheckValidityAndPriority(VPReparsed, "round trip");
+
+		// --- Signal validity, signal reference & junction priority model-edit helpers -----------
+		FOpenDriveRoad* RoadA = VPMap.FindRoadMutable(FString("1"));
+		FOpenDriveRoad* RoadB = VPMap.FindRoadMutable(FString("2"));
+		Check(RoadA != nullptr && RoadB != nullptr, "find roads 1 and 2 for model-edit checks");
+		if (RoadA && RoadB)
+		{
+			// SetSignalValidity: a range naming a lane that doesn't exist at the signal's s is refused.
+			TArray<FOpenDriveSignalValidity> BadRange;
+			BadRange.Add(FOpenDriveSignalValidity{ 5, 5 });
+			Check(!FOpenDriveModelEdit::SetSignalValidity(VPMap, *RoadA, FString("1"), BadRange), "SetSignalValidity refuses a nonexistent lane");
+			Check(RoadA->Signals[0].Validity.Num() == 2, "SetSignalValidity: refused call leaves validity untouched");
+
+			TArray<FOpenDriveSignalValidity> GoodRange;
+			GoodRange.Add(FOpenDriveSignalValidity{ -1, 1 });
+			Check(FOpenDriveModelEdit::SetSignalValidity(VPMap, *RoadA, FString("1"), GoodRange), "SetSignalValidity accepts an existing lane range");
+			Check(RoadA->Signals[0].Validity.Num() == 1, "SetSignalValidity: replaced the ranges");
+
+			// AddSignalReference: refuses an unknown signal id, accepts a known one.
+			Check(!FOpenDriveModelEdit::AddSignalReference(VPMap, *RoadB, FString("no-such-signal"), 15.0, -4.5, EOpenDriveSignalOrientation::Plus),
+				"AddSignalReference refuses an unresolvable signal id");
+			Check(FOpenDriveModelEdit::AddSignalReference(VPMap, *RoadB, FString("1"), 15.0, -4.5, EOpenDriveSignalOrientation::Plus),
+				"AddSignalReference accepts a resolvable signal id");
+			Check(RoadB->SignalReferences.Num() == 2, "AddSignalReference: road now has two references");
+
+			TArray<FOpenDriveSignalValidity> GoodRangeB; // Road B only has lanes -1 and 0 (no lane 1, unlike Road A).
+			GoodRangeB.Add(FOpenDriveSignalValidity{ -1, -1 });
+			Check(FOpenDriveModelEdit::SetSignalReferenceValidity(VPMap, *RoadB, FString("1"), 15.0, -4.5, GoodRangeB), "SetSignalReferenceValidity succeeds");
+			const FOpenDriveSignalReference* NewRef = RoadB->SignalReferences.FindByPredicate([](const FOpenDriveSignalReference& R) { return FMath::Abs(R.S - 15.0) < 1e-6; });
+			Check(NewRef != nullptr && NewRef->Validity.Num() == 1, "SetSignalReferenceValidity: validity applied to the right reference");
+
+			Check(FOpenDriveModelEdit::RemoveSignalReference(*RoadB, FString("1"), 15.0, -4.5), "RemoveSignalReference succeeds");
+			Check(RoadB->SignalReferences.Num() == 1, "RemoveSignalReference: back to one reference");
+		}
+
+		// --- Junction priority model-edit helpers -----------------------------------------------
+		Check(!FOpenDriveModelEdit::SetJunctionPriority(VPMap, FString("100"), FString("2"), FString("does-not-exist")),
+			"SetJunctionPriority refuses a road that isn't a connecting road of the junction");
+		const FOpenDriveJunction* JunctionBefore = VPMap.FindJunction(FString("100"));
+		Check(JunctionBefore && JunctionBefore->Priorities.Num() == 1, "SetJunctionPriority: refused call leaves priorities untouched");
+
+		Check(FOpenDriveModelEdit::RemoveJunctionPriority(VPMap, FString("100"), FString("3"), FString("2")), "RemoveJunctionPriority (reversed order) succeeds");
+		Check(VPMap.FindJunction(FString("100"))->Priorities.Num() == 0, "RemoveJunctionPriority: priority gone");
+		bool bAHigherAfterRemove = false;
+		Check(!VPMap.HasPriority(FString("100"), FString("2"), FString("3"), bAHigherAfterRemove), "HasPriority: no entry after removal");
+
+		Check(FOpenDriveModelEdit::SetJunctionPriority(VPMap, FString("100"), FString("3"), FString("2")), "SetJunctionPriority (re-add, swapped) succeeds");
+		bool bAHigherAfterReAdd = true;
+		Check(VPMap.HasPriority(FString("100"), FString("2"), FString("3"), bAHigherAfterReAdd) && !bAHigherAfterReAdd, "HasPriority reflects the new order");
+
+		// GetConflictingConnections: connections 1 and 2 both come from incoming road "1" (parallel
+		// movements from the same approach -- never conflicting with each other), connection 3 comes from
+		// incoming road "2".
+		TArray<FString> ConflictsWith1;
+		VPMap.GetConflictingConnections(FString("100"), FString("1"), ConflictsWith1);
+		Check(ConflictsWith1.Num() == 1 && ConflictsWith1[0] == FString("3"), "GetConflictingConnections: only the different-approach connection is returned");
+
+		TArray<FString> ConflictsWith3;
+		VPMap.GetConflictingConnections(FString("100"), FString("3"), ConflictsWith3);
+		Check(ConflictsWith3.Num() == 2, "GetConflictingConnections: connection from a different approach conflicts with both others");
 	}
 
 	// --- Road links & junction authoring -----------------------------------------------------------
