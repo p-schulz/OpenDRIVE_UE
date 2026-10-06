@@ -66,6 +66,25 @@ namespace
 		}
 		return FString::FromInt(MaxId + 1);
 	}
+
+	/** Every FromLane/ToLane in Validity must exist as a lane in the lane section active at S -- the
+	 *  cheap existence check SetSignalValidity/SetSignalReferenceValidity validate against. */
+	bool ValidityRangesExistAt(const FOpenDriveMap& Map, const FOpenDriveRoad& Road, double S, const TArray<FOpenDriveSignalValidity>& Validity)
+	{
+		const FOpenDriveLaneSection* Sec = Map.FindLaneSection(Road, S);
+		if (!Sec)
+		{
+			return Validity.Num() == 0;
+		}
+		for (const FOpenDriveSignalValidity& V : Validity)
+		{
+			if (!Sec->FindLane(V.FromLane) || !Sec->FindLane(V.ToLane))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
 }
 
 FString FOpenDriveModelEdit::MakeUniqueRoadId(const FOpenDriveMap& Map)
@@ -701,6 +720,49 @@ bool FOpenDriveModelEdit::RemoveJunctionConnection(FOpenDriveMap& Map, const FSt
 	return false;
 }
 
+bool FOpenDriveModelEdit::SetJunctionPriority(FOpenDriveMap& Map, const FString& JunctionId, const FString& HighRoadId, const FString& LowRoadId)
+{
+	FOpenDriveJunction* Junction = nullptr;
+	for (FOpenDriveJunction& J : Map.GetJunctionsMutable())
+	{
+		if (J.Id == JunctionId) { Junction = &J; break; }
+	}
+	if (!Junction)
+	{
+		return false;
+	}
+	const bool bHighBelongs = Junction->Connections.IndexOfByPredicate([&](const FOpenDriveJunctionConnection& C) { return C.ConnectingRoad == HighRoadId; }) != INDEX_NONE;
+	const bool bLowBelongs = Junction->Connections.IndexOfByPredicate([&](const FOpenDriveJunctionConnection& C) { return C.ConnectingRoad == LowRoadId; }) != INDEX_NONE;
+	if (!bHighBelongs || !bLowBelongs)
+	{
+		return false;
+	}
+	Junction->Priorities.RemoveAll([&](const FOpenDriveJunctionPriority& P)
+	{
+		return (P.High == HighRoadId && P.Low == LowRoadId) || (P.High == LowRoadId && P.Low == HighRoadId);
+	});
+	FOpenDriveJunctionPriority Prio;
+	Prio.High = HighRoadId;
+	Prio.Low = LowRoadId;
+	Junction->Priorities.Add(MoveTemp(Prio));
+	return true;
+}
+
+bool FOpenDriveModelEdit::RemoveJunctionPriority(FOpenDriveMap& Map, const FString& JunctionId, const FString& RoadA, const FString& RoadB)
+{
+	for (FOpenDriveJunction& J : Map.GetJunctionsMutable())
+	{
+		if (J.Id == JunctionId)
+		{
+			return J.Priorities.RemoveAll([&](const FOpenDriveJunctionPriority& P)
+			{
+				return (P.High == RoadA && P.Low == RoadB) || (P.High == RoadB && P.Low == RoadA);
+			}) > 0;
+		}
+	}
+	return false;
+}
+
 FString FOpenDriveModelEdit::AddRoundabout(FOpenDriveMap& Map, const FString& Name, double CenterX, double CenterY, double Radius, int32 NumLegs, double LaneWidth, TArray<FOpenDriveRoundaboutLeg>& OutLegs)
 {
 	OutLegs.Reset();
@@ -856,6 +918,72 @@ bool FOpenDriveModelEdit::SetSignalPose(FOpenDriveRoad& Road, const FString& Sig
 			Sig.ZOffset = ZOffset;
 			Sig.HOffset = HOffsetRad;
 			Road.Signals.Sort([](const FOpenDriveSignal& A, const FOpenDriveSignal& B) { return A.S < B.S; });
+			return true;
+		}
+	}
+	return false;
+}
+
+bool FOpenDriveModelEdit::SetSignalValidity(const FOpenDriveMap& Map, FOpenDriveRoad& Road, const FString& SignalId, TArray<FOpenDriveSignalValidity> NewValidity)
+{
+	for (FOpenDriveSignal& Sig : Road.Signals)
+	{
+		if (Sig.Id == SignalId)
+		{
+			if (!ValidityRangesExistAt(Map, Road, Sig.S, NewValidity))
+			{
+				return false;
+			}
+			Sig.Validity = MoveTemp(NewValidity);
+			return true;
+		}
+	}
+	return false;
+}
+
+// ------------------------------------------------------------------------------------------------
+// Signal references
+// ------------------------------------------------------------------------------------------------
+
+bool FOpenDriveModelEdit::AddSignalReference(const FOpenDriveMap& Map, FOpenDriveRoad& Road, const FString& SignalId, double S, double T, EOpenDriveSignalOrientation Orientation)
+{
+	const FOpenDriveSignal* Resolved = nullptr;
+	const FOpenDriveRoad* OwningRoad = nullptr;
+	FOpenDriveSignalReference Probe;
+	Probe.SignalId = SignalId;
+	if (!Map.ResolveSignalReference(Probe, Resolved, OwningRoad))
+	{
+		return false;
+	}
+	FOpenDriveSignalReference Ref;
+	Ref.SignalId = SignalId;
+	Ref.S = S;
+	Ref.T = T;
+	Ref.Orientation = Orientation;
+	Road.SignalReferences.Add(MoveTemp(Ref));
+	Road.SignalReferences.Sort([](const FOpenDriveSignalReference& A, const FOpenDriveSignalReference& B) { return A.S < B.S; });
+	return true;
+}
+
+bool FOpenDriveModelEdit::RemoveSignalReference(FOpenDriveRoad& Road, const FString& SignalId, double S, double T)
+{
+	return Road.SignalReferences.RemoveAll([&](const FOpenDriveSignalReference& Ref)
+	{
+		return Ref.SignalId == SignalId && FMath::Abs(Ref.S - S) < 1e-6 && FMath::Abs(Ref.T - T) < 1e-6;
+	}) > 0;
+}
+
+bool FOpenDriveModelEdit::SetSignalReferenceValidity(const FOpenDriveMap& Map, FOpenDriveRoad& Road, const FString& SignalId, double S, double T, TArray<FOpenDriveSignalValidity> NewValidity)
+{
+	for (FOpenDriveSignalReference& Ref : Road.SignalReferences)
+	{
+		if (Ref.SignalId == SignalId && FMath::Abs(Ref.S - S) < 1e-6 && FMath::Abs(Ref.T - T) < 1e-6)
+		{
+			if (!ValidityRangesExistAt(Map, Road, Ref.S, NewValidity))
+			{
+				return false;
+			}
+			Ref.Validity = MoveTemp(NewValidity);
 			return true;
 		}
 	}

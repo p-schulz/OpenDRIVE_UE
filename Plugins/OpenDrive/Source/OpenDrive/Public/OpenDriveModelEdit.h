@@ -144,6 +144,16 @@ public:
 	static bool RemoveJunctionConnection(FOpenDriveMap& Map, const FString& JunctionId, const FString& ConnectionId);
 
 	/**
+	 * Sets which of HighRoadId/LowRoadId has the <priority> at JunctionId, replacing any existing entry for
+	 * this pair (either order). Both must already be a connecting-road id of one of the junction's
+	 * connections (see FOpenDriveJunctionConnection::ConnectingRoad); returns false and makes no change if
+	 * JunctionId is unknown or either road id doesn't belong to one of its connections.
+	 */
+	static bool SetJunctionPriority(FOpenDriveMap& Map, const FString& JunctionId, const FString& HighRoadId, const FString& LowRoadId);
+	/** Removes the <priority> entry between RoadA and RoadB (either order) at JunctionId. Returns false if none existed. */
+	static bool RemoveJunctionPriority(FOpenDriveMap& Map, const FString& JunctionId, const FString& RoadA, const FString& RoadB);
+
+	/**
 	 * Creates a German/European-style roundabout: a one-way circulatory ring split into NumLegs equal arc
 	 * segments around one new junction, each already linked to its neighbours (single "driving" lane per
 	 * segment, travelling counter-clockwise -- correct for right-hand traffic, where circulating vehicles
@@ -172,6 +182,26 @@ public:
 	static FString AddSignal(FOpenDriveRoad& Road, ESignalPreset Preset, double S, double T, double SpeedLimitKmh = 50.0);
 	static bool RemoveSignal(FOpenDriveRoad& Road, const FString& SignalId);
 	static bool SetSignalPose(FOpenDriveRoad& Road, const FString& SignalId, double S, double T, double ZOffset, double HOffsetRad);
+
+	/**
+	 * Replaces SignalId's <validity> ranges on Road. Each range's FromLane/ToLane must both exist as a lane
+	 * in the lane section active at the signal's own S (checked against Map); returns false and makes no
+	 * change if SignalId is unknown on Road or any range fails that check. An empty NewValidity is always
+	 * accepted (it means "applies to all lanes" -- see FOpenDriveSignal::AppliesToLane) and clears any
+	 * existing ranges.
+	 */
+	static bool SetSignalValidity(const FOpenDriveMap& Map, FOpenDriveRoad& Road, const FString& SignalId, TArray<FOpenDriveSignalValidity> NewValidity);
+
+	// --- Signal references (placing one signal/sign on more than one road or junction approach) --
+	/** Adds a <signalReference> on Road pointing at SignalId, at (S, T), with the given orientation.
+	 *  Returns false and adds nothing if SignalId doesn't resolve to an existing <signal> anywhere in Map. */
+	static bool AddSignalReference(const FOpenDriveMap& Map, FOpenDriveRoad& Road, const FString& SignalId, double S, double T, EOpenDriveSignalOrientation Orientation);
+	/** Removes the reference on Road matching (SignalId, S, T) -- its identifying tuple, since a
+	 *  <signalReference> has no id of its own in the spec. Returns false if none matches. */
+	static bool RemoveSignalReference(FOpenDriveRoad& Road, const FString& SignalId, double S, double T);
+	/** Replaces the validity ranges of the reference matching (SignalId, S, T); same lane-existence check
+	 *  as SetSignalValidity. Returns false if no reference matches or a range fails the check. */
+	static bool SetSignalReferenceValidity(const FOpenDriveMap& Map, FOpenDriveRoad& Road, const FString& SignalId, double S, double T, TArray<FOpenDriveSignalValidity> NewValidity);
 
 	// --- Objects (static props: poles, trees, barriers, ...) -------------------------------------
 	/** Adds a box-footprint object (Length/Width/Height) at (S, T) with the given free-form Type string
