@@ -108,6 +108,44 @@ void SOpenDriveSignalsTab::Construct(const FArguments& InArgs, FOpenDriveEditorC
 							.Value(this, &SOpenDriveSignalsTab::GetHOffsetDeg).OnValueChanged(this, &SOpenDriveSignalsTab::OnPoseChanged)
 						]
 					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(4.f, 16.f, 4.f, 4.f)
+					[
+						SNew(STextBlock).Text(this, &SOpenDriveSignalsTab::GetValidityText).AutoWrapText(true)
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(4.f)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 4.f, 0.f)[ SNew(STextBlock).Text(LOCTEXT("FromLane", "From Lane")) ]
+						+ SHorizontalBox::Slot().FillWidth(1.f)
+						[
+							SNew(SSpinBox<int32>).IsEnabled(this, &SOpenDriveSignalsTab::HasSelection)
+							.Value(this, &SOpenDriveSignalsTab::GetValidityFromLane).OnValueChanged(this, &SOpenDriveSignalsTab::SetValidityFromLane)
+						]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(4.f)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 4.f, 0.f)[ SNew(STextBlock).Text(LOCTEXT("ToLane", "To Lane")) ]
+						+ SHorizontalBox::Slot().FillWidth(1.f)
+						[
+							SNew(SSpinBox<int32>).IsEnabled(this, &SOpenDriveSignalsTab::HasSelection)
+							.Value(this, &SOpenDriveSignalsTab::GetValidityToLane).OnValueChanged(this, &SOpenDriveSignalsTab::SetValidityToLane)
+						]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(4.f)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().Padding(0.f, 0.f, 4.f, 0.f)
+						[
+							SNew(SButton).Text(LOCTEXT("ApplyValidity", "Apply (single range)")).IsEnabled(this, &SOpenDriveSignalsTab::HasSelection)
+							.OnClicked(this, &SOpenDriveSignalsTab::OnApplyValidityClicked)
+						]
+						+ SHorizontalBox::Slot().AutoWidth()
+						[
+							SNew(SButton).Text(LOCTEXT("ClearValidity", "Clear (all lanes)")).IsEnabled(this, &SOpenDriveSignalsTab::HasSelection)
+							.OnClicked(this, &SOpenDriveSignalsTab::OnClearValidityClicked)
+						]
+					]
 				]
 			]
 		]
@@ -250,6 +288,47 @@ void SOpenDriveSignalsTab::OnPoseChanged(double)
 	}
 	FOpenDriveModelEdit::SetSignalPose(*Context->GetSelectedRoadMutable(), SelectedSignalId, GetS(), GetT(), GetZOffset(), GetHOffsetDeg() * DegToRad);
 	Context->NotifyValueChanged();
+}
+
+FText SOpenDriveSignalsTab::GetValidityText() const
+{
+	const FOpenDriveSignal* Sig = GetSelectedSignal();
+	if (!Sig)
+	{
+		return FText::GetEmpty();
+	}
+	if (Sig->Validity.Num() == 0)
+	{
+		return LOCTEXT("ValidityAll", "Applies to: all lanes");
+	}
+	FString Ranges;
+	for (const FOpenDriveSignalValidity& V : Sig->Validity)
+	{
+		Ranges += (Ranges.IsEmpty() ? TEXT("") : TEXT(", ")) + FString::Printf(TEXT("%d..%d"), V.FromLane, V.ToLane);
+	}
+	return FText::Format(LOCTEXT("ValidityRanges", "Applies to lanes: {0}"), FText::FromString(Ranges));
+}
+
+FReply SOpenDriveSignalsTab::OnApplyValidityClicked()
+{
+	if (Context && Context->GetSelectedRoadMutable() && !SelectedSignalId.IsEmpty())
+	{
+		TArray<FOpenDriveSignalValidity> NewValidity;
+		NewValidity.Add(FOpenDriveSignalValidity{ PendingFromLane, PendingToLane });
+		FOpenDriveModelEdit::SetSignalValidity(Context->GetWorking(), *Context->GetSelectedRoadMutable(), SelectedSignalId, NewValidity);
+		Context->NotifyValueChanged();
+	}
+	return FReply::Handled();
+}
+
+FReply SOpenDriveSignalsTab::OnClearValidityClicked()
+{
+	if (Context && Context->GetSelectedRoadMutable() && !SelectedSignalId.IsEmpty())
+	{
+		FOpenDriveModelEdit::SetSignalValidity(Context->GetWorking(), *Context->GetSelectedRoadMutable(), SelectedSignalId, TArray<FOpenDriveSignalValidity>());
+		Context->NotifyValueChanged();
+	}
+	return FReply::Handled();
 }
 
 FText SOpenDriveSignalsTab::GetHeaderText() const
